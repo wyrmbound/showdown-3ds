@@ -826,11 +826,13 @@ class App {
       return {layout: 'log', title, buttons: [...timer, ...this.chatButton(), {id: 'forfeit', label: 'Forfeit', small: true}]};
     }
     const party = req.side.pokemon;
+    // Revival Blessing: the forced "switch" picks a fainted Pokemon to bring back.
+    const reviving = !!req.forceSwitch && party.some(p => p.reviving);
     if (req.teamPreview || req.forceSwitch || this.battleMode === 'party') {
       const buttons = party.map((p, i) => {
         const hp = Tracker.parseHP(p.condition);
         const species = Tracker.parseDetails(p.details).species;
-        const canPick = req.teamPreview || (!p.active && !hp.fainted);
+        const canPick = req.teamPreview || (reviving ? hp.fainted : !p.active && !hp.fainted);
         return {
           id: `mon${i + 1}`, label: p.ident.slice(p.ident.indexOf(':') + 1).trim(),
           sub: hp.fainted ? 'Fainted' : `${hp.hp}/${hp.maxhp}${hp.status ? ' ' + hp.status.toUpperCase() : ''}${p.active && !req.teamPreview ? ' (in battle)' : ''}`,
@@ -840,7 +842,7 @@ class App {
         };
       });
       if (this.battleMode === 'party' && !req.forceSwitch) buttons.push({id: 'back', label: 'Back', small: true});
-      return {layout: 'party', title: req.teamPreview ? 'Choose your lead' : req.forceSwitch ? 'Choose a Pokemon to send in' : 'Switch to...', buttons};
+      return {layout: 'party', title: req.teamPreview ? 'Choose your lead' : reviving ? 'Choose a Pokemon to revive' : req.forceSwitch ? 'Choose a Pokemon to send in' : 'Switch to...', buttons};
     }
     const act = req.active[0];
     const foe = t.sides[t.mySide === 'p2' ? 'p1' : 'p2'].active;

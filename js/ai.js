@@ -161,6 +161,17 @@ function chooseCOM(battle, sideId, req, difficulty = 'normal') {
   const side = battle.getSide(sideId);
   if (req.teamPreview) return 'default';
   if (req.forceSwitch) {
+    // Revival Blessing: bring back the fainted teammate with the best matchup.
+    if (req.side.pokemon.some(p => p.reviving)) {
+      const foe = side.foe.active[0];
+      let pick = 0, best = -Infinity;
+      req.side.pokemon.forEach((p, i) => {
+        if (!/ fnt$|^0 fnt$/.test(p.condition)) return;
+        const score = foe ? matchup(battle, side.pokemon[i], foe) : 0;
+        if (score > best) { best = score; pick = i + 1; }
+      });
+      return pick ? `switch ${pick}` : 'pass';
+    }
     const n = bestSwitch(battle, side, req);
     return n ? `switch ${n}` : 'pass';
   }

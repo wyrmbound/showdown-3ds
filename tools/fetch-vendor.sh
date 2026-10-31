@@ -8,7 +8,9 @@ fetch() { # dir url commit
   git -C "vendor/$1" fetch -q --depth 1 origin "$3" && git -C "vendor/$1" checkout -q "$3"
 }
 fetch pokemon-showdown https://github.com/smogon/pokemon-showdown.git 2e0a951377bbd3f7193a4300656b010609351beb
-fetch quickjs https://github.com/quickjs-ng/quickjs.git 7b5f588e0f9b643e2996f291bfc861abeaceddc2
+# v0.15.1: the newest release before the arena allocator (v0.16+), which runs out of memory at
+# once on the 3DS's 32-bit CPU as soon as the battle engine allocates a typed array.
+fetch quickjs https://github.com/quickjs-ng/quickjs.git fd0a0210b7be00957751871e7e01b8291268fc29
 fetch mbedtls https://github.com/Mbed-TLS/mbedtls.git 107ea89daaefb9867ea9121002fbbdf926780e98 # v3.6.2, HTTPS login
 fetch bannertool https://github.com/diasurgical/bannertool.git 16d8c5a0ce02a5e06e64ab42275132fca57c04a2 # for the CIA banner
 curl -sSfL -o vendor/stb/stb_image.h https://raw.githubusercontent.com/nothings/stb/003501f6d7a8/stb_image.h
