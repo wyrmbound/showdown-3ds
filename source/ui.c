@@ -11,7 +11,8 @@
 #define TOP_W 400
 #define BOT_W 320
 #define SCR_H 240
-#define MAX_BTNS 12
+#define MAX_BTNS 48 // the on-screen keyboard
+#define SMALL_Y 204 // the small-button row at the bottom
 
 #define RGB(hex) C2D_Color32((hex) >> 16 & 0xff, (hex) >> 8 & 0xff, (hex) & 0xff, 0xff)
 #define WHITE C2D_Color32(0xff, 0xff, 0xff, 0xff)
@@ -24,6 +25,7 @@
 #define BTN_OFF C2D_Color32(0x4a, 0x4f, 0x5c, 0xff)
 #define FOCUS C2D_Color32(0xff, 0xd3, 0x4a, 0xff)
 #define BG_BOTTOM C2D_Color32(0x16, 0x1b, 0x29, 0xff)
+#define CHAT C2D_Color32(0x8f, 0xd3, 0xff, 0xff)
 
 typedef struct {
 	char id[32];
@@ -335,10 +337,25 @@ static void draw_top_title(void) {
 		"Not affiliated with Nintendo, Game Freak or The Pok\xc3\xa9mon Company.");
 }
 
-// Computes button rectangles for the current layout.
-static float layout_buttons(JSValue view, JSValue list) {
+// Rows of wrapped text at the 0.42-0.43 scales used here.
+// shortcut: ~5.6 px per character (citro2d measures unwrapped text only); fine for notices and log lines.
+static int text_rows(const char *s, float width) {
+	int rows = 0, len = 0;
+	for (;; s++) {
+		if (*s && *s != '\n') { len++; continue; }
+		rows += 1 + (int)(len * 5.6f / width);
+		len = 0;
+		if (!*s) return rows;
+	}
+}
+
+// Computes button rectangles for the current layout. Big buttons stack (or form a 2-column grid)
+// from y0 down to the small-button row, shrinking to fit; the keyboard layout places each key
+// where the app says.
+static void layout_buttons(JSValue view, JSValue list, float y0) {
 	char layout[16];
 	jsv_str(view, "layout", layout, sizeof layout);
+	bool keys = !strcmp(layout, "keys");
 	int n = jsv_len(list);
 	if (n > MAX_BTNS) n = MAX_BTNS;
 	nbtns = n;
@@ -350,41 +367,44 @@ static float layout_buttons(JSValue view, JSValue list) {
 		btns[i].enabled = jsv_bool(b, "enabled", true);
 		small[i] = jsv_bool(b, "small", false);
 		if (small[i]) nsmall++; else nbig++;
+		if (keys) {
+			btns[i].x = jsv_int(b, "x", 0);
+			btns[i].y = jsv_int(b, "y", 0);
+			btns[i].w = jsv_int(b, "w", 29);
+			btns[i].h = jsv_int(b, "h", 26);
+		}
 		jsv_free(b);
 	}
-	// Big buttons stack (or form a 2-column grid) from the top; small ones share one row at the
-	// bottom. The battle log layout puts every button in that bottom row.
-	float y = 32, end = y;
 	bool grid = !strcmp(layout, "moves") || !strcmp(layout, "party") || !strcmp(layout, "grid");
 	bool log = !strcmp(layout, "log");
 	if (log) nsmall = n;
+	int rows = grid ? (nbig + 1) / 2 : nbig;
+	float rowh = !strcmp(layout, "moves") ? 62 : 40;
+	if (rows) rowh = fmaxf(24, fminf(rowh, (SMALL_Y - 4 - y0) / rows));
 	int big = 0, sm = 0;
-	float rowh = !strcmp(layout, "moves") ? 62 : !strcmp(layout, "grid") ? fminf(40, 166.0f / ((nbig + 1) / 2)) : 52;
-	float small_y = grid ? 32 + ((nbig + 1) / 2) * rowh + 2 : 204;
-	for (int i = 0; i < n; i++) {
+	for (int i = 0; i < n && !keys; i++) {
 		btn_t *b = &btns[i];
 		if (small[i] || log) {
 			float w = (BOT_W - 8 - (nsmall - 1) * 4) / (float)nsmall;
 			if (w > 150) w = 150;
 			float total = nsmall * w + (nsmall - 1) * 4;
 			b->x = (BOT_W - total) / 2 + sm++ * (w + 4);
-			b->y = small_y;
+			b->y = SMALL_Y;
 			b->w = w;
 			b->h = 30;
 		} else if (grid) {
 			b->x = 4 + (big % 2) * 158;
-			b->y = 32 + (big / 2) * rowh;
+			b->y = y0 + (big / 2) * rowh;
 			b->w = 154;
 			b->h = rowh - 4;
 			big++;
 		} else {
 			b->x = 20;
-			b->y = y;
+			b->y = y0 + big * rowh;
 			b->w = BOT_W - 40;
-			b->h = 34;
-			y += b->h + 6;
+			b->h = rowh - 6;
+			big++;
 		}
-		if (!small[i] && !log && b->y + b->h > end) end = b->y + b->h;
 	}
 	// Keep the focus when the same buttons are shown again; reset it otherwise.
 	char sig[sizeof btn_sig] = "";
@@ -395,34 +415,43 @@ static float layout_buttons(JSValue view, JSValue list) {
 		while (sel < n - 1 && !btns[sel].enabled) sel++;
 	}
 	if (sel >= n) sel = n ? n - 1 : 0;
-	return end;
 }
 
 static void draw_bottom(JSValue view) {
-	char title[128], label[64], sub[64], layout[16], path[64];
-	jsv_str(view, "layout", layout, sizeof layout);
+	char title[128], label[64], sub[64], path[64], body[512];
 	rect(0, 0, BOT_W, 26, PANEL);
 	text(BOT_W / 2, 5, 0.5f, WHITE, C2D_AlignCenter, 0, jsv_str(view, "title", title, sizeof title));
 
-	if (!strcmp(layout, "log")) {
-		// Newest line at the bottom, older ones above it until the space runs out.
-		JSValue log = jsv_get(view, "log");
+	// Notice text sits under the title; the buttons start below it.
+	float y0 = 32;
+	if (jsv_str(view, "text", body, sizeof body)[0]) {
+		int color = jsv_int(view, "textColor", 0xffb3a8); // notices are pink unless the screen says otherwise
+		text(12, 30, 0.42f, RGB(color), C2D_WordWrap, BOT_W - 24, body);
+		y0 = fminf(140, 32 + text_rows(body, BOT_W - 24) * 14 + 6);
+	}
+	JSValue list = jsv_get(view, "buttons");
+	layout_buttons(view, list, y0);
+
+	// Battle log in the space left between the big buttons and the small row (the whole screen in
+	// the log layout): newest line at the bottom, older ones above it until the space runs out.
+	JSValue log = jsv_get(view, "log");
+	int nlog = jsv_len(log);
+	if (nlog) {
+		float top = y0;
+		for (int i = 0; i < nbtns; i++) if (btns[i].y < SMALL_Y) top = fmaxf(top, btns[i].y + btns[i].h);
 		char line[256], k[12];
-		float y = 198;
-		for (int i = jsv_len(log) - 1; i >= 0; i--) {
+		float y = SMALL_Y - 6;
+		for (int i = nlog - 1; i >= 0; i--) {
 			snprintf(k, sizeof k, "%d", i);
 			jsv_str(log, k, line, sizeof line);
-			// shortcut: wrapped height is estimated (~5.6 px per character at this size).
-			int rows = 1 + (int)(strlen(line) * 5.6f / (BOT_W - 16));
-			y -= rows * 14 + 6;
-			if (y < 30) break;
-			text(8, y, 0.43f, i == jsv_len(log) - 1 ? WHITE : MUTED, C2D_WordWrap, BOT_W - 16, line);
+			const char *s = line[0] == 1 ? line + 1 : line; // \x01 marks a chat line
+			y -= text_rows(s, BOT_W - 16) * 14 + 6;
+			if (y < top) break;
+			text(8, y, 0.43f, line[0] == 1 ? CHAT : i == nlog - 1 ? WHITE : MUTED, C2D_WordWrap, BOT_W - 16, s);
 		}
-		jsv_free(log);
 	}
+	jsv_free(log);
 
-	JSValue list = jsv_get(view, "buttons");
-	float end = layout_buttons(view, list);
 	for (int i = 0; i < nbtns; i++) {
 		JSValue b = jsv_idx(list, i);
 		btn_t *r = &btns[i];
@@ -453,12 +482,6 @@ static void draw_bottom(JSValue view) {
 		jsv_free(b);
 	}
 	jsv_free(list);
-
-	char body[512];
-	if (jsv_str(view, "text", body, sizeof body)[0]) {
-		int color = jsv_int(view, "textColor", 0xffb3a8); // notices are pink unless the screen says otherwise
-		text(12, end + 8, 0.42f, RGB(color), C2D_WordWrap, BOT_W - 24, body);
-	}
 }
 
 void ui_draw(C3D_RenderTarget *top, C3D_RenderTarget *bottom) {
@@ -496,13 +519,20 @@ void ui_draw_message(C3D_RenderTarget *top, C3D_RenderTarget *bottom, const char
 	text(10, 34, 0.42f, WHITE, C2D_WordWrap, BOT_W - 20, body);
 }
 
-static void move_sel(int delta) {
-	for (int i = sel + delta; i >= 0 && i < nbtns; i += delta) {
-		if (btns[i].enabled) {
-			sel = i;
-			return;
-		}
+// Nearest enabled button in a direction, so the D-pad works the same on lists, grids and the keyboard.
+static void move_sel(int dx, int dy) {
+	if (sel >= nbtns) return;
+	float cx = btns[sel].x + btns[sel].w / 2, cy = btns[sel].y + btns[sel].h / 2, best = 1e9f;
+	int found = -1;
+	for (int i = 0; i < nbtns; i++) {
+		if (i == sel || !btns[i].enabled) continue;
+		float bx = btns[i].x + btns[i].w / 2 - cx, by = btns[i].y + btns[i].h / 2 - cy;
+		float along = dx * bx + dy * by, across = fabsf(dx * by - dy * bx);
+		if (along < 1 || along + 3 * across >= best) continue;
+		best = along + 3 * across;
+		found = i;
 	}
+	if (found >= 0) sel = found;
 }
 
 void ui_input(u32 down, const touchPosition *touch) {
@@ -523,11 +553,12 @@ void ui_input(u32 down, const touchPosition *touch) {
 			if (!strcmp(btns[i].id, "skip")) js_select("skip");
 		return;
 	}
-	bool grid = nbtns >= 4 && btns[0].w < 200 && btns[1].y == btns[0].y;
-	if (down & KEY_DOWN) move_sel(grid ? 2 : 1);
-	if (down & KEY_UP) move_sel(grid ? -2 : -1);
-	if (down & KEY_RIGHT) move_sel(1);
-	if (down & KEY_LEFT) move_sel(-1);
+	if (down & KEY_DOWN) move_sel(0, 1);
+	if (down & KEY_UP) move_sel(0, -1);
+	if (down & KEY_RIGHT) move_sel(1, 0);
+	if (down & KEY_LEFT) move_sel(-1, 0);
+	if (down & KEY_L) js_select("log-older");
+	if (down & KEY_R) js_select("log-newer");
 	if ((down & KEY_A) && sel < nbtns && btns[sel].enabled) {
 		if (sound_on) sound_play("select");
 		js_select(btns[sel].id);

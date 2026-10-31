@@ -18,6 +18,8 @@ const DEFAULT_LOGIN = 'http://play.pokemonshowdown.com/action.php'; // unregiste
 const LOGIN_API = 'https://play.pokemonshowdown.com/api/'; // passwords and sessions: HTTPS only
 // Milliseconds per battle animation (moves, hits, ...); 0 = just refresh the display.
 const ANIM_MS = {switch: 450, move: 550, hit: 450, heal: 400, faint: 650, boost: 400, drop: 400, status: 400, update: 0};
+const KEY_ROWS = ['1234567890', 'qwertyuiop', "asdfghjkl'", 'zxcvbnm,.?'];
+const KEY_SHIFT = {'?': '!', ',': ';', '.': ':', "'": '"'};
 const effectHint = m => ({4: 'x4', 2: 'x2', 0.5: 'x1/2', 0.25: 'x1/4', 0: 'no effect'})[m] || '';
 // Settings: config.txt key -> the values a tap cycles through (first = default) and their labels.
 const SETTINGS = {
@@ -97,6 +99,7 @@ class App {
   }
 
   select(id) {
+    if (id.startsWith('log-')) { this.scrollLog(id === 'log-older' ? -4 : 4); this.view = this.buildView(); return; } // L/R
     const btn = (this.view?.buttons || []).find(b => b.id === id);
     if (btn && btn.enabled === false) return;
     try { this.onSelect(id); } catch (e) { this.fail(e); }
@@ -554,7 +557,7 @@ class App {
     const reading = this.screen === 'conversation' && this.convId === Tracker.toID(other);
     if (sender !== other || reading) return; // our own echo, or already on screen
     conv.unread++;
-    if (this.screen === 'battle') this.tracker.log.push(`[PM] ${text}`);
+    if (this.screen === 'battle') this.tracker.log.push(`\x01[PM] ${text}`);
     else this.notice = `New message from ${other}`;
   }
 
@@ -570,6 +573,8 @@ class App {
       this.tracker.reset(watching ? 'p1' : null); // a spectator sees p1 at the bottom
       this.resetAnims();
       this.answered = null;
+      this.logAt = null;
+      this.typing = null;
       this.go('battle');
       if (rejoin || watching) { // the server sends the whole battle so far: show where it is now, don't replay it
         this.tracker.feed(text);
@@ -670,7 +675,8 @@ class App {
     }
     if (id === 'forfeit') { this.battleMode = this.battleMode === 'forfeit' ? null : 'forfeit'; return; }
     if (id === 'timer') { this.send(`${this.room}|/timer on`); this.tracker.timerOn = true; return; }
-    if (id === 'chat') { this.cmd('keyboard', 'chat', 'Say something in the battle', '', 150); return; }
+    if (this.typing) { this.onKey(id); return; }
+    if (id === 'chat') { this.typing = {text: '', shift: false}; return; }
     if (id === 'forfeit-yes') {
       this.battleMode = null;
       this.send(`${this.room}|/forfeit`);
@@ -684,6 +690,37 @@ class App {
     if (id.startsWith('move')) this.choose(`move ${id.slice(4)}${this.tera ? ' terastallize' : ''}`);
     else if (id.startsWith('mon')) this.choose(`${req.teamPreview ? 'team' : 'switch'} ${id.slice(3)}`);
     this.tera = false;
+  }
+
+  // On-screen keyboard for battle chat: the system keyboard would pause the whole app.
+  onKey(id) {
+    const ty = this.typing;
+    if (id === 'cancel') this.typing = null;
+    else if (id === 'send') { this.typing = null; if (ty.text.trim()) this.onKeyboard('chat', ty.text.trim()); }
+    else if (id === 'bksp') ty.text = ty.text.slice(0, -1);
+    else if (id === 'shift') ty.shift = !ty.shift;
+    else if (id === 'space') ty.text += ' ';
+    else if (id.startsWith('k:') && ty.text.length < 120) { ty.text += ty.shift ? KEY_SHIFT[id[2]] || id[2].toUpperCase() : id[2]; ty.shift = false; }
+  }
+
+  keysLayout() {
+    const ty = this.typing, buttons = [];
+    KEY_ROWS.forEach((row, r) => [...row].forEach((ch, c) =>
+      buttons.push({id: `k:${ch}`, label: ty.shift ? KEY_SHIFT[ch] || ch.toUpperCase() : ch, x: 6 + c * 31, y: 92 + r * 30, w: 29, h: 26})));
+    let x = 4;
+    for (const [id, label, w] of [['shift', ty.shift ? 'SHIFT' : 'Shift', 50], ['space', 'Space', 110], ['bksp', 'Del', 44], ['send', 'Send', 50], ['cancel', 'Cancel', 50]]) {
+      buttons.push({id, label, small: true, x, y: 212, w, h: 24});
+      x += w + 2;
+    }
+    return {layout: 'keys', title: 'Say something in the battle', buttons, text: ty.text + '_', textColor: 0xffffff};
+  }
+
+  // L/R scroll the battle log; logAt is the newest line shown, null = live.
+  scrollLog(delta) {
+    const len = this.tracker.log.length;
+    if (this.screen !== 'battle' || !len) return;
+    const at = Math.max(6, Math.min(len - 1, (this.logAt ?? len - 1) + delta));
+    this.logAt = at >= len - 1 ? null : at;
   }
 
   unreadText() {
@@ -875,7 +912,9 @@ class App {
       const foeSide = t.mySide === 'p2' ? 'p1' : 'p2';
       Object.assign(v, this.battleButtons());
       v.text = '';
-      v.log = t.log.slice(-7);
+      v.log = this.logAt == null ? t.log.slice(-7) : t.log.slice(this.logAt - 6, this.logAt + 1);
+      if (this.logAt != null) v.title = `${t.log.length - 1 - this.logAt} lines back (L/R to scroll)`;
+      if (this.typing) Object.assign(v, this.keysLayout());
       v.top = {
         me: t.mySide ? this.shownMon(t.mySide) : null,
         foe: this.shownMon(foeSide),
@@ -885,7 +924,7 @@ class App {
         foeTeam: this.teamDots(Object.values(t.sides[foeSide].mons), t.sides[foeSide].teamSize),
         myName: t.mySide ? t.sides[t.mySide].name : '',
         foeName: t.sides[foeSide].name,
-        msg: t.msg, turn: t.turn, weather: t.weather,
+        msg: t.msg.replace(/^\x01/, ''), turn: t.turn, weather: t.weather,
         timer: t.timerLeft == null ? -1 : Math.max(0, Math.ceil(t.timerLeft - (this.now - this.timerAt) / 1000)),
         preview: t.request?.teamPreview && !t.sides[foeSide].active
           ? t.sides[foeSide].preview.map(sp => ({name: sp, sprite: t.spritePath({species: sp}, false, true)})) : [],

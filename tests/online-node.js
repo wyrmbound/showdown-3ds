@@ -114,10 +114,13 @@ if (process.argv.includes('--bot')) {
   if (!w.app.view.buttons.some(x => x.id === 'continue') || w.app.view.buttons.some(x => x.id === 'forfeit')) throw new Error('spectator buttons: ' + JSON.stringify(w.app.view.buttons));
   console.log(`ok   W is watching ${w.app.room} at turn ${w.app.tracker.turn}: ${w.app.view.top.myName} vs ${w.app.view.top.foeName}`);
   await wait(() => a.app.view.buttons.some(x => x.id === 'chat'), 15000, both);
-  a.app.select('chat');
+  a.app.select('chat'); // the on-screen keyboard: type a line and send it
+  for (const ch of 'gl hf') a.app.select(ch === ' ' ? 'space' : `k:${ch}`);
+  if (a.app.view.text !== 'gl hf_') throw new Error('typed text: ' + a.app.view.text);
+  a.app.select('send');
   // Like PMs, battle chat needs a registered name; then A must show the server's reason.
-  await wait(() => b.app.tracker.log.includes('Bot A 3ds: gl hf') || a.app.tracker.log.some(l => /registered to chat/.test(l)), 10000, both);
-  console.log(b.app.tracker.log.includes('Bot A 3ds: gl hf') ? 'ok   battle chat reached the opponent'
+  await wait(() => b.app.tracker.log.includes('\x01Bot A 3ds: gl hf') || a.app.tracker.log.some(l => /registered to chat/.test(l)), 10000, both);
+  console.log(b.app.tracker.log.includes('\x01Bot A 3ds: gl hf') ? 'ok   battle chat reached the opponent'
     : 'ok   (server refuses battle chat from unregistered names; A shows its reason)');
   // Battle timer: A turns it on while waiting; the countdown must show up on A's screen.
   await wait(() => a.app.view.buttons.some(x => x.id === 'timer'), 30000, both);
@@ -136,6 +139,13 @@ if (process.argv.includes('--bot')) {
   await wait(() => w.app.tracker.ended, 60000, both); // the spectator's animations lag behind the players
   if (w.app.tracker.winner !== a.done.winner) throw new Error(`the spectator saw ${w.app.tracker.winner} win`);
   console.log('ok   the spectator saw the same winner');
+  // L scrolls the log back, R forward to live.
+  const n = w.app.tracker.log.length;
+  w.app.select('log-older'); w.app.select('log-older');
+  if (w.app.logAt !== n - 9 || w.app.view.log[6] !== w.app.tracker.log[n - 9] || !/8 lines back/.test(w.app.view.title)) throw new Error(`log scroll: at=${w.app.logAt} title=${w.app.view.title}`);
+  for (let i = 0; i < 3; i++) w.app.select('log-newer');
+  if (w.app.logAt !== null || w.app.view.log.length !== 7) throw new Error('log scroll back to live failed');
+  console.log(`ok   log scrolls back ${n} lines and returns to live`);
   w.app.select('continue'); clearInterval(pumpW);
 
   for (const c of both) { c.done = null; }

@@ -335,8 +335,9 @@ class Tracker {
       if (/^\[(Invalid|Unavailable) choice\]/.test(a)) this.choiceError = true;
       return a.replace(/^\[[^\]]*\]\s*/, '');
     // Names carry a rank symbol in front (☆ for players in this battle, + @ % ... for staff).
-    case 'c': case 'chat': return `${a.trim().replace(/^[^A-Za-z0-9]/, '')}: ${b}`;
-    case 'c:': return `${b.trim().replace(/^[^A-Za-z0-9]/, '')}: ${c}`;
+    // \x01 marks chat so the screen can colour it apart from battle events.
+    case 'c': case 'chat': return `\x01${a.trim().replace(/^[^A-Za-z0-9]/, '')}: ${b}`;
+    case 'c:': return `\x01${b.trim().replace(/^[^A-Za-z0-9]/, '')}: ${c}`;
     case 'raw': case 'html': { const t = a.replace(/<[^>]*>/g, '').trim(); return t.length < 120 ? t : ''; }
     default: return '';
     }
