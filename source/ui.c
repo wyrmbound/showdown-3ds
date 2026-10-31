@@ -11,7 +11,7 @@
 #define TOP_W 400
 #define BOT_W 320
 #define SCR_H 240
-#define MAX_BTNS 48 // the on-screen keyboard
+#define MAX_BTNS 12
 #define SMALL_Y 204 // the small-button row at the bottom
 
 #define RGB(hex) C2D_Color32((hex) >> 16 & 0xff, (hex) >> 8 & 0xff, (hex) & 0xff, 0xff)
@@ -55,8 +55,7 @@ static void text(float x, float y, float scale, u32 color, u32 flags, float wrap
 }
 
 static void rect(float x, float y, float w, float h, u32 c) { C2D_DrawRectSolid(x, y, 0.5f, w, h, c); }
-// Softened corners from three rectangles: citro2d circles switch the GPU mode per call, which
-// adds up with a 45-key keyboard on screen.
+// Softened corners from three rectangles (citro2d circles switch the GPU mode per call).
 static void round_rect(float x, float y, float w, float h, float r, u32 c) {
 	if (r > 3) r = 3;
 	rect(x + r, y, w - 2 * r, h, c);
@@ -370,12 +369,10 @@ static int text_rows(const char *s, float width) {
 }
 
 // Computes button rectangles for the current layout. Big buttons stack (or form a 2-column grid)
-// from y0 down to the small-button row, shrinking to fit; the keyboard layout places each key
-// where the app says.
+// from y0 down to the small-button row, shrinking to fit.
 static void layout_buttons(JSValue view, JSValue list, float y0) {
 	char layout[16];
 	jsv_str(view, "layout", layout, sizeof layout);
-	bool keys = !strcmp(layout, "keys");
 	int n = jsv_len(list);
 	if (n > MAX_BTNS) n = MAX_BTNS;
 	nbtns = n;
@@ -387,12 +384,6 @@ static void layout_buttons(JSValue view, JSValue list, float y0) {
 		btns[i].enabled = jsv_bool(b, "enabled", true);
 		small[i] = jsv_bool(b, "small", false);
 		if (small[i]) nsmall++; else nbig++;
-		if (keys) {
-			btns[i].x = jsv_int(b, "x", 0);
-			btns[i].y = jsv_int(b, "y", 0);
-			btns[i].w = jsv_int(b, "w", 29);
-			btns[i].h = jsv_int(b, "h", 26);
-		}
 		jsv_free(b);
 	}
 	bool grid = !strcmp(layout, "moves") || !strcmp(layout, "party") || !strcmp(layout, "grid");
@@ -402,7 +393,7 @@ static void layout_buttons(JSValue view, JSValue list, float y0) {
 	float rowh = !strcmp(layout, "moves") ? 62 : 40;
 	if (rows) rowh = fmaxf(24, fminf(rowh, (SMALL_Y - 4 - y0) / rows));
 	int big = 0, sm = 0;
-	for (int i = 0; i < n && !keys; i++) {
+	for (int i = 0; i < n; i++) {
 		btn_t *b = &btns[i];
 		if (small[i] || log) {
 			float w = (BOT_W - 8 - (nsmall - 1) * 4) / (float)nsmall;
@@ -437,8 +428,12 @@ static void layout_buttons(JSValue view, JSValue list, float y0) {
 	if (sel >= n) sel = n ? n - 1 : 0;
 }
 
+static char cur_layout[16];
+const char *ui_layout(void) { return cur_layout; }
+
 static void draw_bottom(JSValue view) {
 	char title[128], label[64], sub[64], path[64], body[512];
+	jsv_str(view, "layout", cur_layout, sizeof cur_layout);
 	rect(0, 0, BOT_W, 26, PANEL);
 	rect(0, 26, BOT_W, 2, ACCENT);
 	text(BOT_W / 2, 5, 0.5f, WHITE, C2D_AlignCenter, 0, jsv_str(view, "title", title, sizeof title));

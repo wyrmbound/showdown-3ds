@@ -115,10 +115,7 @@ if (process.argv.includes('--bot')) {
   if (!w.app.view.buttons.some(x => x.id === 'continue') || w.app.view.buttons.some(x => x.id === 'forfeit')) throw new Error('spectator buttons: ' + JSON.stringify(w.app.view.buttons));
   console.log(`ok   W is watching ${w.app.room} at turn ${w.app.tracker.turn}: ${w.app.view.top.myName} vs ${w.app.view.top.foeName}`);
   await wait(() => a.app.view.buttons.some(x => x.id === 'chat'), 15000, both);
-  a.app.select('chat'); // the on-screen keyboard: type a line and send it
-  for (const ch of 'gl hf') a.app.select(ch === ' ' ? 'space' : `k:${ch}`);
-  if (a.app.view.text !== 'gl hf_') throw new Error('typed text: ' + a.app.view.text);
-  a.app.select('send');
+  a.app.select('chat');
   // Like PMs, battle chat needs a registered name; then A must show the server's reason.
   await wait(() => b.app.tracker.log.includes('\x01Bot A 3ds: gl hf') || a.app.tracker.log.some(l => /registered to chat/.test(l)), 10000, both);
   console.log(b.app.tracker.log.includes('\x01Bot A 3ds: gl hf') ? 'ok   battle chat reached the opponent'

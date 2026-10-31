@@ -20,10 +20,17 @@ static int nsfx, next_chn;
 static ndspWaveBuf bufs[CHANNELS];
 static bool ready;
 #define MUSIC_CHN CHANNELS
+// The music loop is synthesized on a thread below the UI's priority (a few seconds of CPU on an
+// Old 3DS), so changing tracks never stalls a frame. Only that thread touches `music`.
 static s16 *music;
 static u32 music_n;
 static ndspWaveBuf music_buf;
-static char music_name[16];
+static char music_name[16];   // playing (synth thread)
+static char music_wanted[16]; // requested (main thread), guarded by music_lock
+static LightLock music_lock;
+static LightEvent music_wake;
+static Thread music_thread;
+static volatile bool music_quit;
 
 static float noise(void) { return (rand() / (float)RAND_MAX) * 2 - 1; }
 
@@ -149,6 +156,8 @@ static void make_music(const track_t *tr) {
 	DSP_FlushDataCache(music, music_n * sizeof *music);
 }
 
+static void music_main(void *arg);
+
 bool sound_init(void) {
 	if (R_FAILED(ndspInit())) return false;
 	ndspSetOutputMode(NDSP_OUTPUT_STEREO);
@@ -170,12 +179,20 @@ bool sound_init(void) {
 	make("boost",   300,  520,  1040,  0.0f, 3, 0.35f); // rising steps
 	make("drop",    300, 1040,   520,  0.0f, 3, 0.35f); // falling steps
 	make("status",  260,  220,   180,  0.5f, 1, 0.35f); // low buzz
+	LightLock_Init(&music_lock);
+	LightEvent_Init(&music_wake, RESET_ONESHOT);
+	s32 prio = 0x30;
+	svcGetThreadPriority(&prio, CUR_THREAD_HANDLE);
+	music_thread = threadCreate(music_main, NULL, 32 * 1024, prio + 1, -2, false);
 	ready = true;
 	return true;
 }
 
 void sound_exit(void) {
 	if (!ready) return;
+	music_quit = true;
+	LightEvent_Signal(&music_wake);
+	if (music_thread) { threadJoin(music_thread, U64_MAX); threadFree(music_thread); }
 	ndspExit();
 	for (int i = 0; i < nsfx; i++) linearFree(sfx[i].pcm);
 	linearFree(music);
@@ -195,17 +212,37 @@ void sound_play(const char *name) {
 	}
 }
 
-void sound_music(const char *track) {
-	if (!ready || !strcmp(track, music_name)) return;
-	snprintf(music_name, sizeof music_name, "%s", track);
-	ndspChnWaveBufClear(MUSIC_CHN);
-	linearFree(music); // shortcut: a track is synthesized when it starts (~0.5 s); keep them all if that stalls too much
-	music = NULL;
-	for (int i = 0; i < N(TRACKS); i++) {
-		if (strcmp(TRACKS[i].name, track)) continue;
-		make_music(&TRACKS[i]);
-		if (!music) return;
-		music_buf = (ndspWaveBuf){.data_vaddr = music, .nsamples = music_n, .looping = true};
-		ndspChnWaveBufAdd(MUSIC_CHN, &music_buf);
+static void music_main(void *arg) {
+	(void)arg;
+	while (!music_quit) {
+		LightEvent_Wait(&music_wake);
+		for (;;) {
+			char name[16];
+			LightLock_Lock(&music_lock);
+			snprintf(name, sizeof name, "%s", music_wanted);
+			LightLock_Unlock(&music_lock);
+			if (music_quit || !strcmp(name, music_name)) break;
+			snprintf(music_name, sizeof music_name, "%s", name);
+			ndspChnWaveBufClear(MUSIC_CHN);
+			linearFree(music);
+			music = NULL;
+			for (int i = 0; i < N(TRACKS); i++) {
+				if (strcmp(TRACKS[i].name, name)) continue;
+				make_music(&TRACKS[i]);
+				if (!music) break;
+				music_buf = (ndspWaveBuf){.data_vaddr = music, .nsamples = music_n, .looping = true};
+				ndspChnWaveBufAdd(MUSIC_CHN, &music_buf);
+			}
+		}
 	}
+}
+
+void sound_music(const char *track) {
+	static char last[16];
+	if (!ready || !strcmp(track, last)) return;
+	snprintf(last, sizeof last, "%s", track);
+	LightLock_Lock(&music_lock);
+	snprintf(music_wanted, sizeof music_wanted, "%s", track);
+	LightLock_Unlock(&music_lock);
+	LightEvent_Signal(&music_wake);
 }

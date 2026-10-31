@@ -170,6 +170,7 @@ int main(void) {
 		hidTouchRead(&touch);
 		ui_input(down, &touch);
 		js_tick(osGetTime());
+		u64 tj = svcGetSystemTick();
 		if (ws.fd >= 0 && ws_poll(&ws, on_ws, NULL) < 0) js_net_event("closed", NULL, 0);
 		sprites_update();
 
@@ -181,13 +182,13 @@ int main(void) {
 		// After drawing, so a "Connecting..." screen is visible while blocking calls run.
 		js_take_commands(on_cmd);
 		u64 t3 = svcGetSystemTick();
-		// Slow-frame diagnostics for log.txt, at most one line every 2 s.
-		static u64 last_slow;
-		if (t3 - t0 > 100 * TICKS_MS && t3 - last_slow > 2000 * TICKS_MS) {
-			last_slow = t3;
-			js_log("slow frame: %lu ms (logic %lu, draw %lu, commands %lu), JS %lu KB, linear free %lu KB",
-				(unsigned long)((t3 - t0) / TICKS_MS), (unsigned long)((t1 - t0) / TICKS_MS), (unsigned long)((t2 - t1) / TICKS_MS),
-				(unsigned long)((t3 - t2) / TICKS_MS), (unsigned long)(js_memory_used() / 1024), (unsigned long)(linearSpaceFree() / 1024));
+		// Slow-frame diagnostics for log.txt (first 300 of them).
+		static int slow_lines;
+		if (t3 - t0 > 100 * TICKS_MS && slow_lines++ < 300) {
+			js_log("slow frame: %lu ms (js %lu, net+sprites %lu, draw %lu, commands %lu) on %s, JS %lu KB, linear free %lu KB",
+				(unsigned long)((t3 - t0) / TICKS_MS), (unsigned long)((tj - t0) / TICKS_MS), (unsigned long)((t1 - tj) / TICKS_MS),
+				(unsigned long)((t2 - t1) / TICKS_MS), (unsigned long)((t3 - t2) / TICKS_MS), ui_layout(),
+				(unsigned long)(js_memory_used() / 1024), (unsigned long)(linearSpaceFree() / 1024));
 		}
 	}
 	ws_close(&ws);

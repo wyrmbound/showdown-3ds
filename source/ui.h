@@ -9,3 +9,5 @@ void ui_input(u32 down, const touchPosition *touch);
 void ui_draw(C3D_RenderTarget *top, C3D_RenderTarget *bottom);
 // Single full-screen message (startup, fatal errors) without a JS view.
 void ui_draw_message(C3D_RenderTarget *top, C3D_RenderTarget *bottom, const char *title, const char *body);
+// Layout of the last frame drawn, for the slow-frame log.
+const char *ui_layout(void);
