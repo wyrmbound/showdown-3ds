@@ -4,6 +4,7 @@ An unofficial [Pokémon Showdown](https://pokemonshowdown.com) client for the Ni
 
 - **Play online** against real players on the main Showdown server: ladder search or
   challenges by name.
+- **Watch a battle**: join the highest-rated live battle in a format as a spectator.
 - Formats: **[Gen 9] Random Battle, OU, Ubers, UU, RU, NU, PU**.
 - **Teambuilder** on the console (Teams in the menu), import from **pokepast.es** links, or
   Showdown export files on the SD card.

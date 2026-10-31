@@ -103,6 +103,16 @@ if (process.argv.includes('--bot')) {
   b.app.select('team-0'); // the fixture's 3-mon OU team
   await wait(() => both.every(c => c.app.screen === 'battle'), 15000, both);
   console.log('ok   OU battle started in', a.app.room);
+  // A third console watches it: Watch -> format -> the server's room list -> joined as a spectator.
+  // Pumped on its own: play() would press its Leave button.
+  const w = client('Bot W 3ds', {});
+  const pumpW = setInterval(w.pump, 15);
+  w.app.select('online');
+  await wait(() => w.app.screen === 'lobby', 15000, both);
+  w.app.select('watch'); w.app.select('gen9ou');
+  await wait(() => w.app.view.screen === 'battle' && w.app.room === a.app.room && w.app.tracker.turn > 0, 20000, both);
+  if (!w.app.view.buttons.some(x => x.id === 'continue') || w.app.view.buttons.some(x => x.id === 'forfeit')) throw new Error('spectator buttons: ' + JSON.stringify(w.app.view.buttons));
+  console.log(`ok   W is watching ${w.app.room} at turn ${w.app.tracker.turn}: ${w.app.view.top.myName} vs ${w.app.view.top.foeName}`);
   await wait(() => a.app.view.buttons.some(x => x.id === 'chat'), 15000, both);
   a.app.select('chat');
   // Like PMs, battle chat needs a registered name; then A must show the server's reason.
@@ -123,6 +133,10 @@ if (process.argv.includes('--bot')) {
   await wait(() => both.every(c => c.done), 120000, both);
   console.log(`ok   OU battle finished: winner ${a.done.winner} after ${a.done.turns} turns (B saw ${b.done.winner})`);
   if (a.done.winner !== b.done.winner) throw new Error('clients disagree on the winner');
+  await wait(() => w.app.tracker.ended, 60000, both); // the spectator's animations lag behind the players
+  if (w.app.tracker.winner !== a.done.winner) throw new Error(`the spectator saw ${w.app.tracker.winner} win`);
+  console.log('ok   the spectator saw the same winner');
+  w.app.select('continue'); clearInterval(pumpW);
 
   for (const c of both) { c.done = null; }
   await wait(() => both.every(c => c.app.screen === 'lobby'), 15000, both);
@@ -132,7 +146,7 @@ if (process.argv.includes('--bot')) {
   await wait(() => both.every(c => c.done), 120000, both);
   console.log(`ok   random battle finished: winner ${a.done.winner}`);
 
-  const errors = both.flatMap(c => c.errors.map(e => `${c.name}: ${e}`));
+  const errors = [...both, w].flatMap(c => c.errors.map(e => `${c.name}: ${e}`));
   for (const c of both) c.ws.close();
   cleanup();
   if (errors.length) { console.log('FAIL\n' + errors.join('\n')); process.exit(1); }

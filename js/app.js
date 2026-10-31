@@ -209,7 +209,8 @@ class App {
     } else if (s === 'format') {
       if (id === 'back') { this.go('lobby'); return; }
       this.flow.format = FORMATS.find(f => f.id === id);
-      if (this.flow.format.random) this.flowReady(); else this.showTeams();
+      if (this.flow.action === 'watch') { this.busyText = 'Finding a battle to watch...'; this.go('busy'); this.send(`|/cmd roomlist ${id},,`); }
+      else if (this.flow.format.random) this.flowReady(); else this.showTeams();
     } else if (s === 'team') {
       if (id === 'back') { this.go(this.flow.action === 'accept' ? 'lobby' : 'format'); return; }
       if (id === 'more') { this.flow.page++; return; }
@@ -219,6 +220,7 @@ class App {
     } else if (s === 'connecting' || s === 'lobby') {
       if (id === 'cancel' || id === 'back') { this.cmd('ws_close'); this.net = null; this.go('menu'); }
       else if (id === 'search') { this.notice = ''; this.flow = {mode: 'online', action: 'search'}; this.go('format'); }
+      else if (id === 'watch') { this.notice = ''; this.flow = {mode: 'online', action: 'watch'}; this.go('format'); }
       else if (id === 'challenge') { this.notice = ''; this.cmd('keyboard', 'challenge', 'Player to challenge', '', 18); }
       else if (id === 'messages') { this.notice = ''; this.go('messages'); }
     } else if (s === 'messages') {
@@ -464,6 +466,7 @@ class App {
       else if (cmd === 'updateuser') {
         this.net.userName = parts[1].trim().replace(/@!$/, '');
         this.net.named = parts[2] === '1';
+        if (this.net.named && this.reconnect && this.watching && this.room) this.send(`|/join ${this.room}`); // players are rejoined by the server, spectators aren't
         if (this.net.named && this.screen === 'connecting') { this.status = ''; this.go('lobby'); }
       } else if (cmd === 'nametaken') {
         // While reconnecting, the server may still hold our name from the dead connection: retry.
@@ -484,6 +487,12 @@ class App {
         const s = JSON.parse(parts.slice(1).join('|'));
         if (s.searching && s.searching.length) { this.status = ''; this.go('searching'); }
         else if (this.screen === 'searching') this.go('lobby');
+      } else if (cmd === 'queryresponse' && parts[1] === 'roomlist') {
+        // Watch: the highest-rated public battle in the chosen format.
+        const rooms = Object.entries(JSON.parse(parts.slice(2).join('|') || '{}').rooms || {});
+        const best = rooms.sort((x, y) => (+y[1].minElo || 0) - (+x[1].minElo || 0))[0];
+        if (!best) { this.notice = `Nobody is playing ${this.flow.format.name} right now.`; this.go('lobby'); }
+        else { this.watchRoom = best[0]; this.send(`|/join ${best[0]}`); }
       } else if (cmd === 'pm') {
         this.onPM(parts[1], parts[2], parts.slice(3).join('|'));
       }
@@ -553,13 +562,16 @@ class App {
     if (text.startsWith('|init|battle')) {
       if (this.screen === 'battle' && this.room && this.room !== room) { this.send(`|/leave ${room}`); return; }
       const rejoin = !!this.reconnect && room === this.room;
+      const watching = room === this.watchRoom || (rejoin && this.watching);
+      this.watching = watching;
+      this.watchRoom = null;
       this.reconnect = null;
       this.room = room;
-      this.tracker.reset(null);
+      this.tracker.reset(watching ? 'p1' : null); // a spectator sees p1 at the bottom
       this.resetAnims();
       this.answered = null;
       this.go('battle');
-      if (rejoin) { // the server resends the whole battle: show where it is now, don't replay it
+      if (rejoin || watching) { // the server sends the whole battle so far: show where it is now, don't replay it
         this.tracker.feed(text);
         this.tracker.flush();
         this.skipAnims();
@@ -730,6 +742,7 @@ class App {
     }
     const req = this.pendingRequest;
     if (!req) {
+      if (this.watching) return {layout: 'log', title: this.reconnect ? 'Connection lost, reconnecting...' : 'Watching', buttons: [...this.chatButton(), {id: 'continue', label: 'Leave', small: true}]};
       const title = this.reconnect ? 'Connection lost, reconnecting...' : t.busy ? '' : 'Waiting for the opponent...';
       // Timer: makes a stalling opponent move (Showdown forfeits them when it runs out).
       const timer = this.net && !t.timerOn ? [{id: 'timer', label: 'Timer', small: true}] : [];
@@ -804,7 +817,7 @@ class App {
         : 'Registered accounts can chat, send private messages and challenge players.';
       v.textColor = 0xc8d2e8;
     } else if (s === 'format') {
-      v.title = this.flow.action === 'challenge' ? `Challenge ${this.flow.target}` : 'Find a battle';
+      v.title = this.flow.action === 'challenge' ? `Challenge ${this.flow.target}` : this.flow.action === 'watch' ? 'Watch a battle' : 'Find a battle';
       v.layout = 'grid'; // seven formats: two columns
       v.buttons = FORMATS.map(f => ({id: f.id, label: f.name})).concat({id: 'back', label: 'Back', small: true});
       if (!v.text) { v.text = 'All formats are Gen 9 singles.'; v.textColor = 0xc8d2e8; }
@@ -828,6 +841,7 @@ class App {
       v.text = [this.status, this.notice].filter(Boolean).join('\n');
       v.buttons = [
         {id: 'search', label: 'Find a battle'},
+        {id: 'watch', label: 'Watch a battle'},
         {id: 'challenge', label: 'Challenge a player'},
         {id: 'messages', label: 'Messages', sub: this.unreadText()},
         {id: 'back', label: 'Disconnect', small: true},
@@ -866,7 +880,8 @@ class App {
         me: t.mySide ? this.shownMon(t.mySide) : null,
         foe: this.shownMon(foeSide),
         fx: this.animFx(t.mySide || 'p1'),
-        myTeam: this.teamDots(t.request?.side?.pokemon.map(p => Tracker.parseHP(p.condition))),
+        myTeam: this.watching ? this.teamDots(Object.values(t.sides.p1.mons), t.sides.p1.teamSize)
+          : this.teamDots(t.request?.side?.pokemon.map(p => Tracker.parseHP(p.condition))),
         foeTeam: this.teamDots(Object.values(t.sides[foeSide].mons), t.sides[foeSide].teamSize),
         myName: t.mySide ? t.sides[t.mySide].name : '',
         foeName: t.sides[foeSide].name,

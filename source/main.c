@@ -177,6 +177,8 @@ int main(void) {
 		js_take_commands(on_cmd);
 	}
 	ws_close(&ws);
+	// Same line as at startup: the two together show what a session's battles cost.
+	js_log("memory at exit: linear free %lu KB, JS %lu KB", (unsigned long)(linearSpaceFree() / 1024), (unsigned long)(js_memory_used() / 1024));
 	js_quit();
 done:
 	sound_exit();
