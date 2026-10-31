@@ -136,7 +136,8 @@ static bool build_sheet(sprite_t *s, const char *data, size_t len, int shrink, i
 		still = stbi_load_from_memory(bytes, len, &w, &h, &comp, 4);
 		if (!still) return false;
 	}
-	if (n < 1 || w < shrink || h < shrink || w > 256 || h > 256) {
+	// Sprites are at most 256 px; a still (the logo) only has to fit one sheet.
+	if (n < 1 || w < shrink || h < shrink || (gif && (w > 256 || h > 256)) || w > max_sheet || h > max_sheet) {
 		stbi_image_free(still);
 		return false;
 	}
@@ -241,8 +242,9 @@ static void load(sprite_t *s, const char *path) {
 		s->total = built.total;
 	}
 	s->state = ok ? DECODED : MISSING;
-	// No connection or a server hiccup: try again in about 10 seconds. A 404 is final.
-	s->retry_at = !ok && status != 404 ? frame + 600 : 0;
+	// No connection or a server hiccup: try again in about 10 seconds. A 404, or a file we can't
+	// decode, is final.
+	s->retry_at = !ok && status != 404 && status != 200 ? frame + 600 : 0;
 	LightLock_Unlock(&lock);
 }
 
@@ -371,7 +373,7 @@ const C2D_Image *sprite_get(const char *path, bool *missing) {
 			pick_frame(hit);
 			img = &hit->img;
 		}
-		*missing = hit->state == MISSING;
+		*missing = hit->state == MISSING && !hit->retry_at; // a retry pending is "loading", not missing
 	} else {
 		// Keep the number of (big) animation sheets bounded, and make room when the table is full.
 		if (animated && ani_count >= (small ? MAX_SMALL_ANIMATED : MAX_ANIMATED)) {

@@ -55,14 +55,13 @@ static void text(float x, float y, float scale, u32 color, u32 flags, float wrap
 }
 
 static void rect(float x, float y, float w, float h, u32 c) { C2D_DrawRectSolid(x, y, 0.5f, w, h, c); }
+// Softened corners from three rectangles: citro2d circles switch the GPU mode per call, which
+// adds up with a 45-key keyboard on screen.
 static void round_rect(float x, float y, float w, float h, float r, u32 c) {
-	C2D_DrawRectSolid(x + r, y, 0.5f, w - 2 * r, h, c);
-	C2D_DrawRectSolid(x, y + r, 0.5f, r, h - 2 * r, c);
-	C2D_DrawRectSolid(x + w - r, y + r, 0.5f, r, h - 2 * r, c);
-	C2D_DrawCircleSolid(x + r, y + r, 0.5f, r, c);
-	C2D_DrawCircleSolid(x + w - r, y + r, 0.5f, r, c);
-	C2D_DrawCircleSolid(x + r, y + h - r, 0.5f, r, c);
-	C2D_DrawCircleSolid(x + w - r, y + h - r, 0.5f, r, c);
+	if (r > 3) r = 3;
+	rect(x + r, y, w - 2 * r, h, c);
+	rect(x, y + r, w, h - 2 * r, c);
+	rect(x + 1, y + 1, w - 2, h - 2, c);
 }
 
 static void frame_rect(float x, float y, float w, float h, float t, u32 c) {
@@ -323,6 +322,12 @@ static void draw_top_battle(JSValue top, const char *detail) {
 		if (timer >= 0) {
 			snprintf(buf, sizeof buf, "Timer %d:%02d", timer / 60, timer % 60);
 			text(TOP_W - 6, ty, 0.45f, timer <= 30 ? RGB(0xd03030) : INK, C2D_AlignRight, 0, buf);
+			ty += 14;
+		}
+		if (jsv_str(top, "foeName", buf, sizeof buf)[0]) { // who we're battling
+			char vs[72];
+			snprintf(vs, sizeof vs, "vs %s", buf);
+			text(TOP_W - 6, ty, 0.4f, INK, C2D_AlignRight, 0, vs);
 		}
 	}
 	jsv_free(foe);
@@ -345,7 +350,7 @@ static void draw_top_title(void) {
 	const C2D_Image *logo = sprite_get("logo", &missing); // Showdown's own logo, fetched and cached like a sprite
 	if (logo) C2D_DrawImageAt(*logo, (TOP_W - logo->subtex->width) / 2, 46, 0.5f, NULL, 1, 1);
 	else text(TOP_W / 2, 64, 1.3f, WHITE, C2D_AlignCenter, 0, "Pok\xc3\xa9mon Showdown");
-	round_rect(TOP_W / 2 - 92, 140, 184, 26, 13, C2D_Color32(0, 0, 0, 0x60));
+	round_rect(TOP_W / 2 - 92, 140, 184, 26, 13, RGB(0x101a33));
 	text(TOP_W / 2, 145, 0.52f, WHITE, C2D_AlignCenter, 0, "Unofficial  \xc2\xb7  3DS");
 	text(TOP_W / 2, 196, 0.38f, MUTED, C2D_AlignCenter | C2D_WordWrap, 360,
 		"Battle engine: Pok\xc3\xa9mon Showdown (MIT). Sprites load from play.pokemonshowdown.com. "

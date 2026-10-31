@@ -12,6 +12,8 @@
 #include "js.h"
 #include "net.h"
 #include "sound.h"
+
+#define TICKS_MS (SYSCLOCK_ARM11 / 1000)
 #include "sprites.h"
 #include "tls.h"
 #include "ui.h"
@@ -161,6 +163,7 @@ int main(void) {
 				js_net_event("closed", "woke from sleep", 15);
 			}
 		}
+		u64 t0 = svcGetSystemTick();
 		hidScanInput();
 		u32 down = hidKeysDown();
 		touchPosition touch;
@@ -170,11 +173,22 @@ int main(void) {
 		if (ws.fd >= 0 && ws_poll(&ws, on_ws, NULL) < 0) js_net_event("closed", NULL, 0);
 		sprites_update();
 
+		u64 t1 = svcGetSystemTick();
 		C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 		ui_draw(top, bottom);
 		C3D_FrameEnd(0);
+		u64 t2 = svcGetSystemTick();
 		// After drawing, so a "Connecting..." screen is visible while blocking calls run.
 		js_take_commands(on_cmd);
+		u64 t3 = svcGetSystemTick();
+		// Slow-frame diagnostics for log.txt, at most one line every 2 s.
+		static u64 last_slow;
+		if (t3 - t0 > 100 * TICKS_MS && t3 - last_slow > 2000 * TICKS_MS) {
+			last_slow = t3;
+			js_log("slow frame: %lu ms (logic %lu, draw %lu, commands %lu), JS %lu KB, linear free %lu KB",
+				(unsigned long)((t3 - t0) / TICKS_MS), (unsigned long)((t1 - t0) / TICKS_MS), (unsigned long)((t2 - t1) / TICKS_MS),
+				(unsigned long)((t3 - t2) / TICKS_MS), (unsigned long)(js_memory_used() / 1024), (unsigned long)(linearSpaceFree() / 1024));
+		}
 	}
 	ws_close(&ws);
 	// Same line as at startup: the two together show what a session's battles cost.

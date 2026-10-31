@@ -114,26 +114,36 @@ static void make_music(const track_t *tr) {
 	u8 note[EIGHTHS], start[EIGHTHS], len[EIGHTHS];
 	for (u32 e = 0, k = 0; k < (u32)tr->nlead; k++)
 		for (int j = 0; j < tr->lead[k].len && e < EIGHTHS; j++, e++) { note[e] = tr->lead[k].note; start[e] = e - j; len[e] = tr->lead[k].len; }
-	float lead_ph = 0, bass_ph = 0;
+	// Frequencies per eighth, and decays as per-sample multipliers: no powf/expf in the sample loop
+	// (half a million samples on a 268 MHz CPU).
+	float lead_f[EIGHTHS], bass_f[EIGHTHS];
+	for (int e = 0; e < EIGHTHS; e++) {
+		lead_f[e] = note[e] ? hz(note[e]) / RATE : 0;
+		bass_f[e] = hz(tr->roots[e / 8] + tr->bounce[e % 8]) / RATE;
+	}
+	const float dl = expf(-3.0f / RATE), db = expf(-6.0f / RATE), dk = expf(-18.0f / RATE), ds = expf(-16.0f / RATE),
+		dh = expf(-70.0f / RATE), dp = expf(-30.0f / RATE);
+	float lead_ph = 0, bass_ph = 0, el = 1, eb = 1, ek = 1, es = 1, eh = 1, pitch = 1;
 	for (u32 i = 0; i < music_n; i++) {
-		u32 e = i / per_eighth;
-		float t = (i % per_eighth) / (float)RATE;         // seconds into this eighth
-		float ts = t + (e - start[e]) * per_eighth / (float)RATE; // seconds into the lead note
+		u32 e = i / per_eighth, k = i % per_eighth;
+		float t = k / (float)RATE;                                   // seconds into this eighth
+		float ts = t + (e - start[e]) * per_eighth / (float)RATE;    // seconds into the lead note
+		if (k == 0) { eb = ek = es = eh = pitch = 1; if (e == start[e]) el = 1; }
 		float v = 0;
 		if (note[e]) {
-			float f = hz(note[e]) * (1 + 0.004f * sinf(2 * (float)M_PI * 6 * ts));
-			lead_ph += f / RATE;
-			float env = fminf(1, ts * 200) * (0.5f + 0.5f * expf(-3 * ts));
+			lead_ph += lead_f[e] * (1 + 0.004f * sinf(2 * (float)M_PI * 6 * ts));
+			float env = fminf(1, ts * 200) * (0.5f + 0.5f * el);
 			if (ts > len[e] * per_eighth / (float)RATE - 0.03f) env = 0; // a breath between notes
 			v += (fmodf(lead_ph, 1) < tr->duty ? 1 : -1) * env * 0.17f;
 		}
-		bass_ph += hz(tr->roots[e / 8] + tr->bounce[e % 8]) / RATE;
+		bass_ph += bass_f[e];
 		float bf = fmodf(bass_ph, 1);
-		v += (4 * fabsf(bf - 0.5f) - 1) * fminf(1, t * 300) * expf(-6 * t) * 0.2f;
+		v += (4 * fabsf(bf - 0.5f) - 1) * fminf(1, t * 300) * eb * 0.2f;
 		int beat = e % 8;
-		if (tr->kick >> beat & 1) v += sinf(2 * (float)M_PI * (40 + 80 * expf(-30 * t)) * t) * expf(-18 * t) * 0.3f;
-		if (tr->snare >> beat & 1) v += noise() * expf(-16 * t) * 0.18f;
-		v += noise() * expf(-70 * t) * 0.06f; // hat
+		if (tr->kick >> beat & 1) v += sinf(2 * (float)M_PI * (40 + 80 * pitch) * t) * ek * 0.3f;
+		if (tr->snare >> beat & 1) v += noise() * es * 0.18f;
+		v += noise() * eh * 0.06f; // hat
+		el *= dl; eb *= db; ek *= dk; es *= ds; eh *= dh; pitch *= dp;
 		music[i] = (s16)(fmaxf(-1, fminf(1, v)) * 32767);
 	}
 	DSP_FlushDataCache(music, music_n * sizeof *music);
