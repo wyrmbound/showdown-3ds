@@ -16,6 +16,7 @@
 #include "stb_image.h"
 
 #define SPRITE_URL "http://play.pokemonshowdown.com/sprites/"
+#define LOGO_URL "http://play.pokemonshowdown.com/pokemonshowdownbeta@2x.png" // path "logo"
 #define MAX_SPRITES 40
 #define MAX_ANIMATED 4        // full-size animation sheets: up to 2 MB of video memory each
 #define MAX_SMALL_ANIMATED 14 // half-size ones (party, team preview): up to 512 KB each
@@ -198,7 +199,8 @@ static void load(sprite_t *s, const char *path) {
 	bool small = !strncmp(path, "s:", 2);
 	int shrink = small ? 2 : 1, max_sheet = small ? 512 : MAX_SHEET;
 	if (small) path += 2;
-	const char *ext = is_animated(path) ? "gif" : "png";
+	bool logo = !strcmp(path, "logo");
+	const char *ext = !logo && is_animated(path) ? "gif" : "png";
 	char file[256], tmp[260];
 	snprintf(file, sizeof file, "%s/%s.%s", cache, path, ext);
 	size_t len = 0;
@@ -210,7 +212,8 @@ static void load(sprite_t *s, const char *path) {
 	if (!ok) {
 		remove(file); // missing or corrupt cache entry
 		char url[160];
-		snprintf(url, sizeof url, SPRITE_URL "%s.%s", path, ext);
+		if (logo) snprintf(url, sizeof url, LOGO_URL);
+		else snprintf(url, sizeof url, SPRITE_URL "%s.%s", path, ext);
 		data = NULL;
 		if (http_get(url, &status, &data, &len) == 0 && status == 200 && build_sheet(&built, data, len, shrink, max_sheet)) {
 			ok = true;

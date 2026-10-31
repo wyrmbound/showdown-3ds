@@ -8,3 +8,4 @@ romfs/
 *.map
 *.cia
 tools/bin/
+/showdown3ds-music-preview.wav

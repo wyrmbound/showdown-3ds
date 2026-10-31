@@ -10,7 +10,8 @@ An unofficial [Pokémon Showdown](https://pokemonshowdown.com) client for the Ni
   Showdown export files on the SD card.
 - In battle: type-effectiveness hints on moves, team overview dots, item/ability/moves of the
   highlighted party member, the battle timer, reconnecting after a dropped connection or sleep.
-- Original synthesized sound effects and a Settings screen (animations, sprite style, sound,
+- Original synthesized sound effects and an original chiptune music loop (both generated at
+  start-up, no audio files), and a Settings screen (animations, sprite style, sound, music,
   server, clear the sprite cache).
 - Showdown's current animated sprites everywhere (battle, party, team preview), falling back to
   its gen5 animations and then still sprites. Battle animations (lunges, type-coloured hits, HP
@@ -19,8 +20,8 @@ An unofficial [Pokémon Showdown](https://pokemonshowdown.com) client for the Ni
   messages. The console stays logged in until you choose **Account → Log out**.
 
 Not affiliated with Nintendo, Game Freak, The Pokémon Company or Smogon. The app ships no
-Pokémon artwork. The first time it needs a sprite, it downloads it from Showdown's sprite
-server (`play.pokemonshowdown.com/sprites/gen5…`), the same place the website loads it from,
+Pokémon artwork. The title screen shows Showdown's logo, and the first time it needs it or a
+sprite, it downloads it from Showdown's (`play.pokemonshowdown.com/sprites/gen5…`), the same place the website loads it from,
 and caches it on the SD card.
 
 ## Install

@@ -26,6 +26,7 @@ const SETTINGS = {
   anim: {label: 'Animations', values: ['normal', 'fast', 'off'], names: ['Normal', 'Fast', 'Off']},
   sprites: {label: 'Sprites', values: ['ani', 'gen5ani', 'gen5'], names: ['Current (3D)', '2D animated', 'Still']},
   sound: {label: 'Sound', values: ['on', 'off'], names: ['On', 'Off']},
+  music: {label: 'Music', values: ['on', 'off'], names: ['On', 'Off']},
 };
 const ANIM_SPEED = {normal: 1, fast: 0.5, off: 0};
 const PAGE = 3; // teams per page; fits the bottom screen with Rental + More + Back
@@ -822,7 +823,7 @@ class App {
   buildView() {
     const s = this.screen;
     const v = {screen: s, title: '', text: this.notice || '', layout: 'list', buttons: [], top: null, log: [],
-      sound: this.setting('sound') === 'on'};
+      sound: this.setting('sound') === 'on', music: this.setting('music') === 'on'};
     const fmt = this.flow?.format;
     if (s.startsWith('tb-')) this.tbView(v);
     else if (s === 'menu') {

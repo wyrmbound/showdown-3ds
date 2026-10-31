@@ -7,3 +7,5 @@ bool sound_init(void);
 void sound_exit(void);
 // name: "select", "move", "hit", "faint", "switch", "heal", "boost", "drop", "status".
 void sound_play(const char *name);
+// Starts or stops the background music loop (the Music setting).
+void sound_music(bool on);

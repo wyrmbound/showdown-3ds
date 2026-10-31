@@ -18,13 +18,15 @@
 #define WHITE C2D_Color32(0xff, 0xff, 0xff, 0xff)
 #define INK C2D_Color32(0x1c, 0x22, 0x33, 0xff)
 #define MUTED C2D_Color32(0x8a, 0x94, 0xa8, 0xff)
-#define PANEL C2D_Color32(0x24, 0x2c, 0x40, 0xff)
+#define PANEL C2D_Color32(0x1b, 0x22, 0x38, 0xff)
 #define PANEL_LIGHT C2D_Color32(0xf4, 0xf6, 0xfb, 0xf0)
-#define BTN C2D_Color32(0x3d, 0x5a, 0x9e, 0xff)
-#define BTN_SMALL C2D_Color32(0x34, 0x3e, 0x58, 0xff)
-#define BTN_OFF C2D_Color32(0x4a, 0x4f, 0x5c, 0xff)
+#define BTN C2D_Color32(0x3b, 0x6f, 0xd6, 0xff)
+#define BTN_SMALL C2D_Color32(0x2b, 0x34, 0x50, 0xff)
+#define BTN_OFF C2D_Color32(0x3a, 0x40, 0x52, 0xff)
+#define SHADOW C2D_Color32(0x0a, 0x0d, 0x18, 0xff)
+#define ACCENT C2D_Color32(0x5b, 0x8d, 0xef, 0xff)
 #define FOCUS C2D_Color32(0xff, 0xd3, 0x4a, 0xff)
-#define BG_BOTTOM C2D_Color32(0x16, 0x1b, 0x29, 0xff)
+#define BG_BOTTOM C2D_Color32(0x12, 0x17, 0x2a, 0xff)
 #define CHAT C2D_Color32(0x8f, 0xd3, 0xff, 0xff)
 
 typedef struct {
@@ -53,6 +55,15 @@ static void text(float x, float y, float scale, u32 color, u32 flags, float wrap
 }
 
 static void rect(float x, float y, float w, float h, u32 c) { C2D_DrawRectSolid(x, y, 0.5f, w, h, c); }
+static void round_rect(float x, float y, float w, float h, float r, u32 c) {
+	C2D_DrawRectSolid(x + r, y, 0.5f, w - 2 * r, h, c);
+	C2D_DrawRectSolid(x, y + r, 0.5f, r, h - 2 * r, c);
+	C2D_DrawRectSolid(x + w - r, y + r, 0.5f, r, h - 2 * r, c);
+	C2D_DrawCircleSolid(x + r, y + r, 0.5f, r, c);
+	C2D_DrawCircleSolid(x + w - r, y + r, 0.5f, r, c);
+	C2D_DrawCircleSolid(x + r, y + h - r, 0.5f, r, c);
+	C2D_DrawCircleSolid(x + w - r, y + h - r, 0.5f, r, c);
+}
 
 static void frame_rect(float x, float y, float w, float h, float t, u32 c) {
 	rect(x, y, w, t, c);
@@ -330,8 +341,12 @@ static void draw_top_title(void) {
 	C2D_DrawRectangle(0, 0, 0.5f, TOP_W, SCR_H, RGB(0x1d2b52), RGB(0x1d2b52), RGB(0x0e1426), RGB(0x0e1426));
 	C2D_DrawEllipseSolid(-60, 150, 0.5f, 260, 160, C2D_Color32(0xc0, 0x50, 0x4d, 0x50));
 	C2D_DrawEllipseSolid(200, -80, 0.5f, 260, 160, C2D_Color32(0x3d, 0x5a, 0x9e, 0x60));
-	text(TOP_W / 2, 64, 1.3f, WHITE, C2D_AlignCenter, 0, "Showdown 3DS");
-	text(TOP_W / 2, 112, 0.55f, RGB(0xc8d2e8), C2D_AlignCenter, 0, "An unofficial Pok\xc3\xa9mon Showdown client");
+	bool missing;
+	const C2D_Image *logo = sprite_get("logo", &missing); // Showdown's own logo, fetched and cached like a sprite
+	if (logo) C2D_DrawImageAt(*logo, (TOP_W - logo->subtex->width) / 2, 46, 0.5f, NULL, 1, 1);
+	else text(TOP_W / 2, 64, 1.3f, WHITE, C2D_AlignCenter, 0, "Pok\xc3\xa9mon Showdown");
+	round_rect(TOP_W / 2 - 92, 140, 184, 26, 13, C2D_Color32(0, 0, 0, 0x60));
+	text(TOP_W / 2, 145, 0.52f, WHITE, C2D_AlignCenter, 0, "Unofficial  \xc2\xb7  3DS");
 	text(TOP_W / 2, 196, 0.38f, MUTED, C2D_AlignCenter | C2D_WordWrap, 360,
 		"Battle engine: Pok\xc3\xa9mon Showdown (MIT). Sprites load from play.pokemonshowdown.com. "
 		"Not affiliated with Nintendo, Game Freak or The Pok\xc3\xa9mon Company.");
@@ -420,6 +435,7 @@ static void layout_buttons(JSValue view, JSValue list, float y0) {
 static void draw_bottom(JSValue view) {
 	char title[128], label[64], sub[64], path[64], body[512];
 	rect(0, 0, BOT_W, 26, PANEL);
+	rect(0, 26, BOT_W, 2, ACCENT);
 	text(BOT_W / 2, 5, 0.5f, WHITE, C2D_AlignCenter, 0, jsv_str(view, "title", title, sizeof title));
 
 	// Notice text sits under the title; the buttons start below it.
@@ -458,9 +474,11 @@ static void draw_bottom(JSValue view) {
 		bool small = jsv_bool(b, "small", false);
 		int color = jsv_int(b, "color", -1);
 		u32 fill = !r->enabled ? BTN_OFF : color >= 0 ? RGB(color) : small ? BTN_SMALL : BTN;
-		rect(r->x, r->y, r->w, r->h, fill);
-		if (color >= 0 && r->enabled) rect(r->x, r->y + r->h - 4, r->w, 4, C2D_Color32(0, 0, 0, 0x40));
-		if (i == sel) frame_rect(r->x - 2, r->y - 2, r->w + 4, r->h + 4, 2, FOCUS);
+		float rad = fminf(6, r->h / 3);
+		if (i == sel) round_rect(r->x - 2, r->y - 2, r->w + 4, r->h + 4, rad + 2, FOCUS);
+		else round_rect(r->x, r->y + 2, r->w, r->h, rad, SHADOW);
+		round_rect(r->x, r->y, r->w, r->h, rad, fill);
+		if (color >= 0 && r->enabled) round_rect(r->x + 4, r->y + r->h - 5, r->w - 8, 3, 1.5f, C2D_Color32(0, 0, 0, 0x50));
 		jsv_str(b, "label", label, sizeof label);
 		jsv_str(b, "sub", sub, sizeof sub);
 		u32 ink = r->enabled ? WHITE : MUTED;
@@ -488,6 +506,7 @@ void ui_draw(C3D_RenderTarget *top, C3D_RenderTarget *bottom) {
 	C2D_TextBufClear(tbuf);
 	JSValue view = js_view();
 	sound_on = jsv_bool(view, "sound", true);
+	sound_music(jsv_bool(view, "music", true));
 	JSValue topv = jsv_get(view, "top");
 	C2D_TargetClear(top, RGB(0x0e1426));
 	C2D_SceneBegin(top);
