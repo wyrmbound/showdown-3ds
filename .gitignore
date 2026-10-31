@@ -1,0 +1,10 @@
+vendor/
+build/
+build-host/
+romfs/
+*.3dsx
+*.elf
+*.smdh
+*.map
+*.cia
+tools/bin/
