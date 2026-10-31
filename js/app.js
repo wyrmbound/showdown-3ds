@@ -26,7 +26,7 @@ const SETTINGS = {
   anim: {label: 'Animations', values: ['normal', 'fast', 'off'], names: ['Normal', 'Fast', 'Off']},
   sprites: {label: 'Sprites', values: ['ani', 'gen5ani', 'gen5'], names: ['Current (3D)', '2D animated', 'Still']},
   sound: {label: 'Sound', values: ['on', 'off'], names: ['On', 'Off']},
-  music: {label: 'Music', values: ['on', 'off'], names: ['On', 'Off']},
+  music: {label: 'Music', values: ['auto', 'lobby', 'rival', 'legend', 'off'], names: ['Auto (battle themes)', 'Lobby', 'Rival', 'Legend', 'Off']},
 };
 const ANIM_SPEED = {normal: 1, fast: 0.5, off: 0};
 const PAGE = 3; // teams per page; fits the bottom screen with Rental + More + Back
@@ -576,6 +576,7 @@ class App {
       this.answered = null;
       this.logAt = null;
       this.typing = null;
+      this.battleNo = (this.battleNo || 0) + 1;
       this.go('battle');
       if (rejoin || watching) { // the server sends the whole battle so far: show where it is now, don't replay it
         this.tracker.feed(text);
@@ -819,11 +820,18 @@ class App {
     return {layout: 'moves', title: `What will ${t.sides[t.mySide].active?.name || 'you'} do?`, buttons};
   }
 
+  // Auto: the lobby theme in menus, battle themes taking turns in battles.
+  musicTrack() {
+    const m = this.setting('music');
+    if (m !== 'auto') return m === 'off' ? '' : m;
+    return this.screen === 'battle' ? ['rival', 'legend'][this.battleNo % 2] : 'lobby';
+  }
+
   // ---- view ----
   buildView() {
     const s = this.screen;
     const v = {screen: s, title: '', text: this.notice || '', layout: 'list', buttons: [], top: null, log: [],
-      sound: this.setting('sound') === 'on', music: this.setting('music') === 'on'};
+      sound: this.setting('sound') === 'on', music: this.musicTrack()};
     const fmt = this.flow?.format;
     if (s.startsWith('tb-')) this.tbView(v);
     else if (s === 'menu') {

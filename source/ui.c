@@ -506,7 +506,8 @@ void ui_draw(C3D_RenderTarget *top, C3D_RenderTarget *bottom) {
 	C2D_TextBufClear(tbuf);
 	JSValue view = js_view();
 	sound_on = jsv_bool(view, "sound", true);
-	sound_music(jsv_bool(view, "music", true));
+	char track[16];
+	sound_music(jsv_str(view, "music", track, sizeof track));
 	JSValue topv = jsv_get(view, "top");
 	C2D_TargetClear(top, RGB(0x0e1426));
 	C2D_SceneBegin(top);

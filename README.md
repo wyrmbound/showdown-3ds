@@ -10,9 +10,9 @@ An unofficial [Pokémon Showdown](https://pokemonshowdown.com) client for the Ni
   Showdown export files on the SD card.
 - In battle: type-effectiveness hints on moves, team overview dots, item/ability/moves of the
   highlighted party member, the battle timer, reconnecting after a dropped connection or sleep.
-- Original synthesized sound effects and an original chiptune music loop (both generated at
-  start-up, no audio files), and a Settings screen (animations, sprite style, sound, music,
-  server, clear the sprite cache).
+- Original synthesized sound effects and three original chiptune tracks (a lobby theme and two
+  battle themes, synthesized on the console, no audio files), and a Settings screen
+  (animations, sprite style, sound, music, server, clear the sprite cache).
 - Showdown's current animated sprites everywhere (battle, party, team preview), falling back to
   its gen5 animations and then still sprites. Battle animations (lunges, type-coloured hits, HP
   draining, fainting, switching, stat changes) play while the log fills in instantly; Skip jumps ahead.

@@ -103,6 +103,7 @@ if (process.argv.includes('--bot')) {
   b.app.select('team-0'); // the fixture's 3-mon OU team
   await wait(() => both.every(c => c.app.screen === 'battle'), 15000, both);
   console.log('ok   OU battle started in', a.app.room);
+  if (!['rival', 'legend'].includes(a.app.view.music)) throw new Error('battle music track: ' + a.app.view.music);
   // A third console watches it: Watch -> format -> the server's room list -> joined as a spectator.
   // Pumped on its own: play() would press its Leave button.
   const w = client('Bot W 3ds', {});
