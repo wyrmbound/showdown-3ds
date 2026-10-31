@@ -1,6 +1,5 @@
 // PC test harness: runs the 3DS app's C glue (js.c, net.c) without graphics and plays like a
 // random player by reading app.view through the same jsv_* accessors the renderer uses.
-//   host_main com <format> [team]          COM battle (team: rental | team-0 ...)
 //   host_main online <host:port> <name>    log in (no login server) and play one random battle
 #include <stdio.h>
 #include <stdlib.h>
@@ -113,7 +112,7 @@ static int play(int online) {
 
 int main(int argc, char **argv) {
 	if (argc < 3) {
-		fprintf(stderr, "usage: host_main com <format> [team] | online <host:port> <name>\n");
+		fprintf(stderr, "usage: host_main online <host:port> <name> | https <url> [body]\n");
 		return 2;
 	}
 	setvbuf(stdout, NULL, _IONBF, 0);
@@ -122,7 +121,7 @@ int main(int argc, char **argv) {
 	net_init();
 	tls_set_ca_file("certs/cacert.pem");
 	const char *data = getenv("SD3DS_DATA") ? getenv("SD3DS_DATA") : "build-host/sd";
-	if (!js_init("js", "romfs/ps", "romfs/data/client.json", data)) {
+	if (!js_init("js", "romfs/data/client.json", data)) {
 		fprintf(stderr, "init failed: %s\n", js_error());
 		return 1;
 	}
@@ -146,16 +145,15 @@ int main(int argc, char **argv) {
 		fputs(cfg, f);
 		fclose(f);
 		js_quit();
-		if (!js_init("js", "romfs/ps", "romfs/data/client.json", data)) return 1;
+		if (!js_init("js", "romfs/data/client.json", data)) return 1;
 	}
 	uint64_t now = 0;
 	js_tick(now);
-	if (online) js_select("online");
-	else {
-		js_select("com");
-		js_select(argv[2]);
-		if (argc > 3) js_select(argv[3]);
+	if (!online) {
+		fprintf(stderr, "unknown mode %s\n", argv[1]);
+		return 2;
 	}
+	js_select("online");
 	int finished = 0;
 	clock_t t0 = clock();
 	for (int i = 0; i < 200000 && !finished && !want_exit; i++) {

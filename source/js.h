@@ -6,8 +6,8 @@
 #include <stdint.h>
 #include "quickjs.h"
 
-// script_dir holds require.js etc., sim_root the staged Showdown files, data_dir the SD folder.
-bool js_init(const char *script_dir, const char *sim_root, const char *client_data, const char *data_dir);
+// script_dir holds the app scripts (js/), data_dir is the SD folder.
+bool js_init(const char *script_dir, const char *client_data, const char *data_dir);
 void js_quit(void);
 const char *js_error(void); // last error text, for the crash screen
 void js_log(const char *fmt, ...); // a line in the SD card's log.txt (after js_init)

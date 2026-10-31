@@ -1,13 +1,6 @@
 #include "js.h"
 
 #include <dirent.h>
-#include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#define MKDIR(p) _mkdir(p)
-#else
-#define MKDIR(p) mkdir(p, 0777)
-#endif
 #include <stdarg.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -149,84 +142,6 @@ static JSValue fn_log(JSContext *c, JSValueConst this_val, int argc, JSValueCons
 	return JS_UNDEFINED;
 }
 
-static char js_cache_dir[256];
-
-static uint64_t fnv64(const char *s, size_t n) {
-	uint64_t h = 1469598103934665603ULL;
-	for (size_t i = 0; i < n; i++) {
-		h ^= (unsigned char)s[i];
-		h *= 1099511628211ULL;
-	}
-	return h;
-}
-
-// __loadModule(path) -> the CommonJS wrapper function for a source file, or null if it's missing.
-// Compiling Showdown's ~3 MB of JavaScript is most of the COM start-up time on an Old 3DS, so the
-// compiled bytecode is cached on the SD card, stamped with a hash of the source: the next launch
-// reads it back instead, and a changed source (app update) simply compiles again. The console
-// writes its own cache, so the bytecode always matches this exact QuickJS build.
-static JSValue fn_load_module(JSContext *c, JSValueConst this_val, int argc, JSValueConst *argv) {
-	const char *path = JS_ToCString(c, argv[0]);
-	if (!path) return JS_EXCEPTION;
-	size_t len, blen;
-	char *src = read_file(path, &len);
-	if (!src) {
-		JS_FreeCString(c, path);
-		return JS_NULL;
-	}
-	uint64_t hash = fnv64(src, len);
-	char cache[512] = "";
-	if (js_cache_dir[0]) {
-		int n = snprintf(cache, sizeof cache, "%s/", js_cache_dir);
-		for (const char *p = path; *p && n < (int)sizeof cache - 8; p++) cache[n++] = (*p == '/' || *p == ':') ? '_' : *p;
-		snprintf(cache + n, sizeof cache - n, ".qbc");
-	}
-	JSValue fn = JS_UNDEFINED;
-	char *bc = cache[0] ? read_file(cache, &blen) : NULL;
-	if (bc && blen > 8 && !memcmp(bc, &hash, 8)) {
-		JSValue obj = JS_ReadObject(c, (const uint8_t *)bc + 8, blen - 8, JS_READ_OBJ_BYTECODE);
-		fn = JS_IsException(obj) ? obj : JS_EvalFunction(c, obj);
-		if (JS_IsException(fn)) { // unreadable cache: compile from source instead
-			JS_FreeValue(c, JS_GetException(c));
-			fn = JS_UNDEFINED;
-		}
-	}
-	free(bc);
-	if (JS_IsUndefined(fn)) {
-		static const char head[] = "(function (exports, require, module, __filename, __dirname) {", tail[] = "\n})";
-		size_t wlen = sizeof head - 1 + len + sizeof tail - 1;
-		char *w = malloc(wlen + 1);
-		if (!w) {
-			free(src);
-			JS_FreeCString(c, path);
-			return JS_ThrowOutOfMemory(c);
-		}
-		memcpy(w, head, sizeof head - 1);
-		memcpy(w + sizeof head - 1, src, len);
-		memcpy(w + sizeof head - 1 + len, tail, sizeof tail);
-		JSValue obj = JS_Eval(c, w, wlen, path, JS_EVAL_TYPE_GLOBAL | JS_EVAL_FLAG_COMPILE_ONLY);
-		free(w);
-		if (!JS_IsException(obj) && cache[0]) {
-			size_t olen;
-			uint8_t *out = JS_WriteObject(c, &olen, obj, JS_WRITE_OBJ_BYTECODE);
-			char tmp[520];
-			snprintf(tmp, sizeof tmp, "%s.tmp", cache);
-			FILE *f = out ? fopen(tmp, "wb") : NULL;
-			if (f) {
-				bool ok = fwrite(&hash, 8, 1, f) == 1 && fwrite(out, 1, olen, f) == olen;
-				fclose(f);
-				remove(cache);
-				if (!ok || rename(tmp, cache) != 0) remove(tmp);
-			}
-			js_free(c, out);
-		}
-		fn = JS_IsException(obj) ? obj : JS_EvalFunction(c, obj);
-	}
-	free(src);
-	JS_FreeCString(c, path);
-	return fn;
-}
-
 static bool eval_file(const char *path) {
 	size_t len;
 	char *src = read_file(path, &len);
@@ -245,7 +160,7 @@ static bool eval_file(const char *path) {
 	return true;
 }
 
-bool js_init(const char *script_dir, const char *sim_root, const char *client_data, const char *data_dir) {
+bool js_init(const char *script_dir, const char *client_data, const char *data_dir) {
 	char path[256];
 	snprintf(path, sizeof path, "%s/log.txt", data_dir);
 	log_file = fopen(path, "w");
@@ -258,10 +173,6 @@ bool js_init(const char *script_dir, const char *sim_root, const char *client_da
 	JS_SetPropertyStr(ctx, g, "__writeFile", JS_NewCFunction(ctx, fn_write_file, "__writeFile", 2));
 	JS_SetPropertyStr(ctx, g, "__listDir", JS_NewCFunction(ctx, fn_list_dir, "__listDir", 1));
 	JS_SetPropertyStr(ctx, g, "__removeFile", JS_NewCFunction(ctx, fn_remove_file, "__removeFile", 1));
-	JS_SetPropertyStr(ctx, g, "__loadModule", JS_NewCFunction(ctx, fn_load_module, "__loadModule", 1));
-	snprintf(js_cache_dir, sizeof js_cache_dir, "%s/jscache", data_dir);
-	MKDIR(js_cache_dir);
-	JS_SetPropertyStr(ctx, g, "__ROOT", JS_NewString(ctx, sim_root));
 	JS_SetPropertyStr(ctx, g, "__DATA", JS_NewString(ctx, data_dir));
 	JS_SetPropertyStr(ctx, g, "__CLIENT_DATA", JS_NewString(ctx, client_data));
 	JSValue console = JS_NewObject(ctx);
@@ -269,7 +180,7 @@ bool js_init(const char *script_dir, const char *sim_root, const char *client_da
 	JS_SetPropertyStr(ctx, console, "error", JS_NewCFunction(ctx, fn_log, "error", 1));
 	JS_SetPropertyStr(ctx, console, "warn", JS_NewCFunction(ctx, fn_log, "warn", 1));
 	JS_SetPropertyStr(ctx, g, "console", console);
-	static const char *scripts[] = {"require.js", "tracker.js", "ai.js", "app.js", "teambuilder.js"};
+	static const char *scripts[] = {"tracker.js", "app.js", "teambuilder.js"};
 	bool ok = true;
 	for (size_t i = 0; ok && i < sizeof scripts / sizeof *scripts; i++) {
 		snprintf(path, sizeof path, "%s/%s", script_dir, scripts[i]);

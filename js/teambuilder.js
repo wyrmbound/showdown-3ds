@@ -53,6 +53,30 @@ function tbExportSets(sets) {
   }).join('\n\n');
 }
 
+// Showdown's packed team format (what /utm takes), from parsed export sets.
+const STAT_IDS = {HP: 0, Atk: 1, Def: 2, SpA: 3, SpD: 4, Spe: 5};
+function packStats(text, missing) {
+  const vals = Array(6).fill(missing);
+  for (const part of (text || '').split('/')) {
+    const m = /^\s*(\d+)\s+(HP|Atk|Def|SpA|SpD|Spe)\s*$/.exec(part);
+    if (m) vals[STAT_IDS[m[2]]] = +m[1];
+  }
+  return vals.every(v => v === missing) ? '' : vals.map(v => v === missing ? '' : v).join(',');
+}
+
+function packTeam(sets) {
+  const id = s => (s || '').replace(/[^A-Za-z0-9]+/g, '');
+  return sets.filter(s => s.species).map(s => {
+    const extra = key => (s.extra.find(l => l.startsWith(key + ':')) || '').slice(key.length + 1).trim();
+    const level = +extra('Level') || 100, happiness = extra('Happiness');
+    const nick = s.nickname || s.species;
+    return [nick, id(nick) === id(s.species) ? '' : id(s.species), id(s.item), id(s.ability),
+      s.moves.filter(Boolean).map(id).join(','), s.nature, packStats(s.evs, 0), s.gender || '',
+      packStats(extra('IVs'), 31), /^yes$/i.test(extra('Shiny')) ? 'S' : '', level === 100 ? '' : level,
+      `${happiness}${s.tera ? `,,,,,${s.tera}` : ''}`].join('|');
+  }).join(']');
+}
+
 Object.assign(App.prototype, {
   tbData() {
     return this.tbCache ||= JSON.parse(__readFile(__CLIENT_DATA.replace('client.json', 'tb.json')) || '{"species":{},"moves":[],"items":[],"natures":[],"types":[]}');
@@ -264,5 +288,5 @@ Object.assign(App.prototype, {
   },
 });
 
-if (typeof module !== 'undefined') module.exports = {tbParseSets, tbExportSets};
-else Object.assign(globalThis, {tbParseSets, tbExportSets});
+if (typeof module !== 'undefined') module.exports = {tbParseSets, tbExportSets, packTeam};
+else Object.assign(globalThis, {tbParseSets, tbExportSets, packTeam});

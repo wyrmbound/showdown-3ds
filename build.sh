@@ -9,9 +9,9 @@ export PATH="$DEVKITARM/bin:$DEVKITPRO/tools/bin:/c/Program Files/nodejs:/clanga
 PS=vendor/pokemon-showdown
 
 [ -d $PS/dist ] || (cd $PS && npm ci --omit=optional --no-audit --no-fund && node build)
-node tools/stage-sim.js $PS romfs/ps
 node tools/make-client-data.js $PS romfs/data/client.json
 node tools/make-tb-data.js $PS romfs/data/tb.json
+node tools/make-rentals.js $PS romfs/data/rentals.json
 rm -rf romfs/js && mkdir -p romfs/js && cp js/*.js romfs/js/
 cp certs/cacert.pem romfs/data/cacert.pem # Mozilla root CAs (MPL-2.0) for HTTPS login
 

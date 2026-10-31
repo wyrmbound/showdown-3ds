@@ -13,7 +13,6 @@ module.exports = function boot() {
   fs.mkdirSync(path.join(data, 'teams'));
   fs.copyFileSync(path.join(__dirname, 'fixtures/teams.txt'), path.join(data, 'teams/teams.txt'));
   Object.assign(globalThis, {
-    __ROOT: slash(path.join(root, 'romfs/ps')),
     __DATA: slash(data),
     __CLIENT_DATA: path.join(root, 'romfs/data/client.json'),
     __readFile: p => { try { return fs.readFileSync(p, 'utf8'); } catch { return null; } },
@@ -21,7 +20,7 @@ module.exports = function boot() {
     __listDir: p => { try { return fs.readdirSync(p); } catch { return null; } },
     __removeFile: p => { try { fs.rmSync(p); return true; } catch { return false; } },
   });
-  for (const f of ['js/require.js', 'js/tracker.js', 'js/ai.js', 'js/app.js', 'js/teambuilder.js', 'tests/drive.js']) {
+  for (const f of ['js/tracker.js', 'js/app.js', 'js/teambuilder.js']) {
     vm.runInThisContext(fs.readFileSync(path.join(root, f), 'utf8'), {filename: f});
   }
   return () => fs.rmSync(data, {recursive: true, force: true});

@@ -52,9 +52,15 @@ const before = Teams.import(text), after = Teams.import(tbExportSets(tbParseSets
 const lost = before.flatMap((s, i) => Object.keys(s).filter(k => JSON.stringify(s[k]) !== JSON.stringify(after[i]?.[k])).map(k => `${s.species}.${k}`));
 console.log(lost.length ? `FAIL round trip lost: ${lost.join(', ')}` : 'ok   editing keeps nickname, gender, shiny, IVs and level');
 
+// Teams sent online are packed by the app (no battle engine on the console): Showdown must read
+// them back as the same team.
+const mine = packTeam(tbParseSets(text)), theirs = Teams.pack(before);
+const wrong = mine === theirs ? [] : [`\n  app:      ${mine}\n  showdown: ${theirs}`];
+console.log(wrong.length ? `FAIL packed team differs:${wrong[0]}` : 'ok   packed teams are identical to Showdown\'s own Teams.pack');
+
 // Delete it again through the screens.
 app.tbEdit(team);
 app.select('delete'); app.select('yes');
 console.log(app.tbAllTeams().some(t => t.name === 'Test Squad') ? 'FAIL team still there after delete' : 'ok   deleted');
 cleanup();
-process.exit(problems || lost.length ? 1 : 0);
+process.exit(problems || lost.length || wrong.length ? 1 : 0);

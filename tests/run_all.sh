@@ -4,14 +4,8 @@
 set -e
 cd "$(dirname "$0")/.."
 SERVER=${1:-localhost:8001}
-node tests/com-node.js 2
 node tests/teambuilder-node.js
-node tests/ai-strength.js 10
 bash host/build.sh
-mkdir -p build-host/sd/teams && cp tests/fixtures/teams.txt build-host/sd/teams/
-for args in "gen9randombattle" "gen9ou rental" "gen9ou team-0" "gen9ubers rental"; do
-  ./build-host/host_main.exe com $args | tail -1
-done
 if node -e "fetch('http://$SERVER').then(()=>process.exit(0),()=>process.exit(1))"; then
   node tests/online-node.js "$SERVER"
   (node tests/online-node.js "$SERVER" --bot &)

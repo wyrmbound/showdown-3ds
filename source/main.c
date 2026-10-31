@@ -102,7 +102,6 @@ static void on_cmd(int argc, const char **argv) {
 		keyboard(argv[1], argv[2], argv[3], atoi(argv[4]), argc > 5 && !strcmp(argv[5], "password"));
 	} else if (!strcmp(c, "clear_cache")) {
 		clear_dir(DATA_DIR "/sprites", 1);
-		clear_dir(DATA_DIR "/jscache", 0);
 	} else if (!strcmp(c, "exit")) {
 		quit = true;
 	}
@@ -129,7 +128,7 @@ int main(void) {
 	bool sound_ok = sound_init(); // needs sdmc:/3ds/dspfirm.cdc
 
 	message_frame("Loading...", "Starting up.");
-	if (!js_init("romfs:/js", "romfs:/ps", "romfs:/data/client.json", DATA_DIR)) {
+	if (!js_init("romfs:/js", "romfs:/data/client.json", DATA_DIR)) {
 		// Details for a bug report: how the app was launched and what its romfs holds.
 		char diag[1024];
 		int n = snprintf(diag, sizeof diag, "%s\n\nromfsInit 0x%08lX, launched as %s\nromfs:/ has:", js_error(),

@@ -7,7 +7,7 @@ const FORMATS = [
   {id: 'gen9randombattle', name: 'Random Battle', random: true},
   {id: 'gen9ou', name: 'OU', tier: 'OU'},
   {id: 'gen9ubers', name: 'Ubers', tier: 'Uber'},
-  // Lower tiers: Battle Factory has sets for each, so rentals and the COM work the same way.
+  // Lower tiers: Battle Factory has sets for each, so rental teams work the same way.
   {id: 'gen9uu', name: 'UU', tier: 'UU'},
   {id: 'gen9ru', name: 'RU', tier: 'RU'},
   {id: 'gen9nu', name: 'NU', tier: 'NU'},
@@ -23,7 +23,6 @@ const effectHint = m => ({4: 'x4', 2: 'x2', 0.5: 'x1/2', 0.25: 'x1/4', 0: 'no ef
 const SETTINGS = {
   anim: {label: 'Animations', values: ['normal', 'fast', 'off'], names: ['Normal', 'Fast', 'Off']},
   sprites: {label: 'Sprites', values: ['ani', 'gen5ani', 'gen5'], names: ['Current (3D)', '2D animated', 'Still']},
-  difficulty: {label: 'COM', values: ['normal', 'hard', 'easy'], names: ['Normal', 'Hard', 'Easy']},
   sound: {label: 'Sound', values: ['on', 'off'], names: ['On', 'Off']},
 };
 const ANIM_SPEED = {normal: 1, fast: 0.5, off: 0};
@@ -61,46 +60,6 @@ function parseTeamFile(file, text) {
   return teams.filter(t => t.text.trim());
 }
 
-class OfflineBattle {
-  constructor(sim, tracker, format, p1, p2) {
-    this.tracker = tracker;
-    this.comReq = null;
-    this.battle = new sim.Battle({formatid: format, send: (t, d) => this.onSend(t, d)});
-    this.battle.setPlayer('p1', p1);
-    this.battle.setPlayer('p2', p2);
-    this.pump();
-  }
-
-  onSend(type, data) {
-    if (type === 'update') { this.tracker.feed(data.join('\n')); return; }
-    if (type !== 'sideupdate') return;
-    const nl = data.indexOf('\n');
-    const side = data.slice(0, nl), msg = data.slice(nl + 1);
-    if (side === 'p1') this.tracker.feed(msg);
-    else if (msg.startsWith('|request|')) this.comReq = JSON.parse(msg.slice(9));
-  }
-
-  choose(choice) {
-    this.battle.choose('p1', choice);
-    this.pump();
-  }
-
-  forfeit() { this.battle.forceWin('p2'); this.pump(); }
-
-  pump() {
-    this.battle.sendUpdates();
-    for (let guard = 0; this.comReq && guard < 20; guard++) {
-      const req = this.comReq;
-      this.comReq = null;
-      if (req.wait || this.battle.ended) continue;
-      let choice = 'default';
-      try { choice = chooseCOM(this.battle, 'p2', req, this.difficulty); } catch (e) { console.log('COM error: ' + e); }
-      if (!this.battle.choose('p2', choice)) this.battle.choose('p2', 'default');
-      this.battle.sendUpdates();
-    }
-  }
-}
-
 class App {
   constructor() {
     this.cfg = parseConfig(__readFile(__DATA + '/config.txt'));
@@ -115,10 +74,8 @@ class App {
     this.cmds = [];
     this.jobs = [];
     this.ticks = 0;
-    this.sim = null;
     this.notice = '';
     this.net = null; // online session state
-    this.offline = null;
     this.flow = null; // what we are setting up: {mode, action, format, target, page}
     this.go('menu');
   }
@@ -181,7 +138,6 @@ class App {
   fail(e) {
     console.log('error: ' + (e && e.stack || e));
     this.notice = 'Error: ' + (e && e.message || e);
-    if (this.offline) this.offline = null;
     this.go(this.net ? 'lobby' : 'menu');
   }
 
@@ -192,11 +148,6 @@ class App {
 
   saveConfig() {
     __writeFile(__DATA + '/config.txt', Object.entries(this.cfg).map(([k, v]) => `${k}=${v}`).join('\n') + '\n');
-  }
-
-  loadSim() {
-    if (!this.sim) this.sim = require('/sim/index.js');
-    return this.sim;
   }
 
   teamsFor(formatId) {
@@ -211,32 +162,18 @@ class App {
     return out;
   }
 
-  // Resolves the team the player picked into sets (needs the sim's team code).
-  playerSets(flow) {
-    const {Teams} = this.loadSim();
-    if (flow.format.random) return Teams.generate(flow.format.id);
-    if (flow.team === 'rental') return this.factoryTeam(flow.format);
-    const sets = Teams.import(flow.team.text);
-    if (!sets || !sets.length) throw new Error(`Couldn't read team "${flow.team.name}"`);
-    return sets;
-  }
-
-  // Battle Factory sets, minus anything the target format bans (e.g. Tera Blast in OU).
-  factoryTeam(format) {
-    const {Teams, Dex} = this.loadSim();
-    const rules = Dex.formats.getRuleTable(Dex.formats.get(format.id));
-    const banned = (kind, name) => name && rules.isBanned(`${kind}:${Tracker.toID(name)}`);
-    for (let tries = 0; ; tries++) {
-      const gen = Teams.getGenerator('gen9battlefactory');
-      gen.factoryTier = format.tier;
-      const team = gen.randomFactoryTeam();
-      if (tries < 20 && team.some(s => banned('ability', s.ability) || banned('pokemon', s.species))) continue;
-      for (const set of team) {
-        set.moves = set.moves.filter(m => !banned('move', m));
-        if (banned('item', set.item)) set.item = '';
-      }
-      return team;
+  // The team to send for a non-random format, in Showdown's packed form. Rentals were built and
+  // checked with Showdown's validator at build time (tools/make-rentals.js).
+  packedTeam(flow) {
+    if (flow.team === 'rental') {
+      this.rentals ||= JSON.parse(__readFile(__CLIENT_DATA.replace('client.json', 'rentals.json')) || '{}');
+      const list = this.rentals[flow.format.id] || [];
+      if (!list.length) throw new Error(`No rental teams for ${flow.format.name}`);
+      return list[Math.floor(Math.random() * list.length)];
     }
+    const sets = tbParseSets(flow.team.text);
+    if (!sets.length) throw new Error(`Couldn't read team "${flow.team.name}"`);
+    return packTeam(sets);
   }
 
   // ---- input ----
@@ -246,7 +183,6 @@ class App {
     if (s === 'menu') {
       this.notice = '';
       if (id === 'online') this.startOnline();
-      else if (id === 'com') { this.flow = {mode: 'com', action: 'battle'}; this.go('format'); }
       else if (id === 'account') this.go('account');
       else if (id === 'settings') { this.notice = ''; this.go('settings'); }
       else if (id === 'teams') this.tbOpen();
@@ -254,7 +190,7 @@ class App {
     } else if (s === 'settings') {
       if (id === 'back') this.go('menu');
       else if (id === 'server') this.cmd('keyboard', 'server', 'Server (host:port)', this.cfg.server || DEFAULT_SERVER, 60);
-      else if (id === 'clearcache') { this.cmd('clear_cache'); this.notice = 'Sprite and engine caches cleared.'; }
+      else if (id === 'clearcache') { this.cmd('clear_cache'); this.notice = 'Sprite cache cleared.'; }
       else if (SETTINGS[id]) {
         const opt = SETTINGS[id], i = opt.values.indexOf(this.setting(id));
         this.cfg[id] = opt.values[(i + 1) % opt.values.length];
@@ -271,7 +207,7 @@ class App {
         this.notice = 'Logged out on this console.';
       }
     } else if (s === 'format') {
-      if (id === 'back') { this.go(this.flow.mode === 'com' ? 'menu' : 'lobby'); return; }
+      if (id === 'back') { this.go('lobby'); return; }
       this.flow.format = FORMATS.find(f => f.id === id);
       if (this.flow.format.random) this.flowReady(); else this.showTeams();
     } else if (s === 'team') {
@@ -389,15 +325,13 @@ class App {
 
   convName() { return this.net.pms[this.convId]?.name || this.convId; }
 
-  // Everything chosen: start the battle / search / challenge. Loading teams can take a few
-  // seconds on the console, so it runs as a job after a "Loading" frame has been drawn.
+  // Everything chosen: send the team, then search / challenge / accept.
   flowReady() {
     const flow = this.flow;
-    this.busyText = flow.mode === 'com' ? 'Loading the battle engine...' : 'Preparing your team...';
+    this.busyText = 'Preparing your team...';
     this.go('busy');
     this.later(() => {
-      if (flow.mode === 'com') return this.startCOM(flow);
-      const packed = flow.format.random ? 'null' : this.loadSim().Teams.pack(this.playerSets(flow));
+      const packed = flow.format.random ? 'null' : this.packedTeam(flow);
       this.send(`|/utm ${packed}`);
       if (flow.action === 'search') this.send(`|/search ${flow.format.id}`);
       else if (flow.action === 'challenge') this.send(`|/challenge ${flow.target}, ${flow.format.id}`);
@@ -406,20 +340,6 @@ class App {
       this.status = '';
       this.go(flow.action === 'search' ? 'searching' : flow.action === 'challenge' ? 'challenging' : 'lobby');
     });
-  }
-
-  // ---- COM battles ----
-  startCOM(flow) {
-    const sim = this.loadSim();
-    const comTeam = flow.format.random ? sim.Teams.generate(flow.format.id) : this.factoryTeam(flow.format);
-    this.tracker.reset('p1');
-    this.resetAnims();
-    this.room = null;
-    this.answered = null;
-    this.go('battle');
-    this.offline = new OfflineBattle(sim, this.tracker, flow.format.id,
-      {name: this.cfg.name || 'You', team: this.playerSets(flow)}, {name: 'COM', team: comTeam});
-    this.offline.difficulty = this.setting('difficulty');
   }
 
   // ---- online ----
@@ -508,7 +428,7 @@ class App {
     if (!wasOnline) return;
     // Mid-battle (dropped Wi-Fi, woke from sleep): Showdown keeps the battle going, so reconnect
     // and it sends the battle back. Gives up after about a minute.
-    if (this.screen === 'battle' && !this.offline && !this.tracker.ended) {
+    if (this.screen === 'battle' && !this.tracker.ended) {
       const tries = (this.reconnect?.tries || 0) + 1;
       if (tries <= 12) {
         this.reconnect = {tries, at: (this.now || 0) + (tries === 1 ? 1000 : 5000)};
@@ -518,7 +438,7 @@ class App {
       this.tracker.ended = true;
     }
     if (!this.notice) this.notice = reason ? `Disconnected: ${reason}` : 'Disconnected from the server.';
-    if (this.screen !== 'battle' || this.offline) this.go('menu');
+    if (this.screen !== 'battle') this.go('menu');
   }
 
   reconnectTick(now) {
@@ -635,7 +555,6 @@ class App {
       const rejoin = !!this.reconnect && room === this.room;
       this.reconnect = null;
       this.room = room;
-      this.offline = null;
       this.tracker.reset(null);
       this.resetAnims();
       this.answered = null;
@@ -725,12 +644,7 @@ class App {
   choose(choice) {
     this.answered = this.tracker.request;
     this.battleMode = null;
-    if (this.offline) {
-      this.thinking = true;
-      this.later(() => { this.thinking = false; this.offline.choose(choice); });
-    } else {
-      this.send(`${this.room}|/choose ${choice}|${this.tracker.request.rqid}`);
-    }
+    this.send(`${this.room}|/choose ${choice}|${this.tracker.request.rqid}`);
   }
 
   onBattleSelect(id) {
@@ -739,9 +653,7 @@ class App {
     if (id === 'continue') {
       if (this.room && this.net) this.send(`|/leave ${this.room}`);
       this.room = null;
-      const wasCom = !!this.offline;
-      this.offline = null;
-      this.go(this.net && !wasCom ? 'lobby' : 'menu');
+      this.go(this.net ? 'lobby' : 'menu');
       return;
     }
     if (id === 'forfeit') { this.battleMode = this.battleMode === 'forfeit' ? null : 'forfeit'; return; }
@@ -749,8 +661,7 @@ class App {
     if (id === 'chat') { this.cmd('keyboard', 'chat', 'Say something in the battle', '', 150); return; }
     if (id === 'forfeit-yes') {
       this.battleMode = null;
-      if (this.offline) this.later(() => this.offline.forfeit());
-      else this.send(`${this.room}|/forfeit`);
+      this.send(`${this.room}|/forfeit`);
       return;
     }
     if (id === 'back') { this.battleMode = null; return; }
@@ -768,7 +679,7 @@ class App {
     return n ? `${n} unread` : '';
   }
 
-  chatButton() { return this.offline || !this.net ? [] : [{id: 'chat', label: 'Chat', small: true}]; }
+  chatButton() { return this.net ? [{id: 'chat', label: 'Chat', small: true}] : []; }
 
   // Damage multiplier of a move type against a Pokemon as the screen knows it (its Tera type once
   // it has Terastallized). Abilities like Levitate aren't known in advance, so this is a hint.
@@ -797,11 +708,10 @@ class App {
   }
 
   isStatusMove(id) {
-    return this.offline ? this.offline.battle.dex.moves.get(id).category === 'Status' : this.statusMoves.has(id);
+    return this.statusMoves.has(id);
   }
 
   moveType(id) {
-    if (this.offline) return this.offline.battle.dex.moves.get(id).type;
     if (id.startsWith('hiddenpower')) {
       const t = id.slice(11).replace(/\d+$/, '');
       return t ? t[0].toUpperCase() + t.slice(1) : 'Normal';
@@ -820,9 +730,9 @@ class App {
     }
     const req = this.pendingRequest;
     if (!req) {
-      const title = this.reconnect ? 'Connection lost, reconnecting...' : t.busy ? '' : this.thinking ? 'COM is thinking...' : 'Waiting for the opponent...';
+      const title = this.reconnect ? 'Connection lost, reconnecting...' : t.busy ? '' : 'Waiting for the opponent...';
       // Timer: makes a stalling opponent move (Showdown forfeits them when it runs out).
-      const timer = !this.offline && this.net && !t.timerOn ? [{id: 'timer', label: 'Timer', small: true}] : [];
+      const timer = this.net && !t.timerOn ? [{id: 'timer', label: 'Timer', small: true}] : [];
       return {layout: 'log', title, buttons: [...timer, ...this.chatButton(), {id: 'forfeit', label: 'Forfeit', small: true}]};
     }
     const party = req.side.pokemon;
@@ -869,7 +779,6 @@ class App {
       v.title = 'Showdown 3DS';
       v.buttons = [
         {id: 'online', label: 'Play online'},
-        {id: 'com', label: 'Play vs COM'},
         {id: 'account', label: `Account: ${this.cfg.name || '(no name)'}`, sub: this.cfg.sid ? 'Logged in' : ''},
         {id: 'teams', label: 'Teams'},
         {id: 'settings', label: 'Settings', small: true},
@@ -895,7 +804,7 @@ class App {
         : 'Registered accounts can chat, send private messages and challenge players.';
       v.textColor = 0xc8d2e8;
     } else if (s === 'format') {
-      v.title = this.flow.mode === 'com' ? 'Battle the COM' : this.flow.action === 'challenge' ? `Challenge ${this.flow.target}` : 'Find a battle';
+      v.title = this.flow.action === 'challenge' ? `Challenge ${this.flow.target}` : 'Find a battle';
       v.layout = 'grid'; // seven formats: two columns
       v.buttons = FORMATS.map(f => ({id: f.id, label: f.name})).concat({id: 'back', label: 'Back', small: true});
       if (!v.text) { v.text = 'All formats are Gen 9 singles.'; v.textColor = 0xc8d2e8; }

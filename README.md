@@ -4,15 +4,13 @@ An unofficial [Pokémon Showdown](https://pokemonshowdown.com) client for the Ni
 
 - **Play online** against real players on the main Showdown server: ladder search or
   challenges by name.
-- **Play vs COM** fully offline. Showdown's own battle engine runs on the console, so the
-  damage, abilities and items are identical to the website's.
 - Formats: **[Gen 9] Random Battle, OU, Ubers, UU, RU, NU, PU**.
 - **Teambuilder** on the console (Teams in the menu), import from **pokepast.es** links, or
   Showdown export files on the SD card.
 - In battle: type-effectiveness hints on moves, team overview dots, item/ability/moves of the
   highlighted party member, the battle timer, reconnecting after a dropped connection or sleep.
-- COM difficulty (Easy / Normal / Hard), original synthesized sound effects, and a Settings
-  screen (animations, sprite style, COM, sound, server, clear caches).
+- Original synthesized sound effects and a Settings screen (animations, sprite style, sound,
+  server, clear the sprite cache).
 - Showdown's current animated sprites everywhere (battle, party, team preview), falling back to
   its gen5 animations and then still sprites. Battle animations (lunges, type-coloured hits, HP
   draining, fainting, switching, stat changes) play while the log fills in instantly; Skip jumps ahead.
@@ -26,8 +24,7 @@ and caches it on the SD card.
 
 ## Install
 
-Either way works; the console needs Wi-Fi for online play and for downloading sprites, while
-COM battles work without it.
+Either way works. The console needs Wi-Fi: every battle runs on the Showdown server.
 
 - **HOME Menu icon (CIA):** copy `showdown3ds.cia` to the SD card, open FBI, choose
   *SD → the file → Install CIA*. Showdown 3DS then appears on the HOME Menu with its own banner.
@@ -52,7 +49,7 @@ in Showdown's backup format (`=== [gen9ou] Team name ===` headers). Teams with a
 header only appear for that format.
 
 No team? Pick **Rental team**: a ready-made competitive team built from Showdown's Battle
-Factory sets for that tier. The COM always uses rental teams.
+Factory sets for that tier, checked with Showdown's team validator when the app is built.
 
 ## Controls
 
@@ -83,8 +80,8 @@ bash tools/fetch-vendor.sh   # pinned Showdown, QuickJS-ng and stb_image sources
 C:/msys64/usr/bin/bash.exe -l build.sh
 ```
 
-`build.sh` builds Showdown's compiled engine, copies only what the three formats need
-(about 3 MB) into `romfs/ps`, writes a small lookup file (`romfs/data/client.json`), copies
+`build.sh` builds Showdown on the PC and uses it to write the app's data files (`romfs/data/`:
+lookup tables, teambuilder data and validated rental teams), copies
 `js/` into romfs, and runs `make`. It then builds the CIA: it compiles bannertool once
 (`tools/bin/`), packs `cia/banner.png` + `cia/banner.wav` and the icon, and runs makerom with
 `cia/showdown3ds.rsf` (SD-card file access only, 1 MB stack). Set `MAKEROM=` if makerom isn't
@@ -95,10 +92,8 @@ icon, banner and banner chime (all original art).
 
 | Part | Where |
 |---|---|
-| App logic: screens, online protocol, COM battles, team loading | `js/app.js` |
+| App logic: screens, online protocol, team loading and packing | `js/app.js` |
 | Battle protocol → state + one message per event | `js/tracker.js` |
-| COM opponent (damage estimate, status/setup/recovery rules, switching) | `js/ai.js` |
-| CommonJS loader that runs Showdown's compiled `dist/` in QuickJS | `js/require.js` |
 | QuickJS host and view accessors | `source/js.c` |
 | Websocket + HTTP over plain TCP (3DS and PC) | `source/net.c` |
 | Sprite download, SD cache and textures | `source/sprites.c` |
@@ -110,7 +105,7 @@ keyboard). Everything else is JavaScript, so the same code runs in node for the 
 ## Testing
 
 ```bash
-bash tests/run_all.sh          # COM battles in node and through the C glue
+bash tests/run_all.sh          # teambuilder, online battles, the C client, sprite sheets
 ```
 
 The online tests need a local Showdown server (`vendor/pokemon-showdown`) with
@@ -122,9 +117,8 @@ started with `node pokemon-showdown start 8001`. With that running, `run_all.sh`
 - plays a battle between the C client (`host/host_main.c`, which uses the 3DS app's own
   `js.c` and `net.c`) and a node bot.
 
-Measured on a PC: the engine plus a battle uses about 14 MB of JavaScript memory. That's
-64-bit; expect less on the 3DS's 32-bit CPU. The Old 3DS/2DS CPU is far slower than a PC,
-so loading the engine for a COM battle takes several seconds there.
+There is no offline COM mode: Showdown's battle engine couldn't start on the console (see git
+history), so every battle runs on the Showdown server.
 
 ## Status
 
