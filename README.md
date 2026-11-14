@@ -124,5 +124,5 @@ history), so every battle runs on the Showdown server.
 
 ## Status
 
-Built and tested on a PC as described above. **Not yet run on real hardware.** The drawing,
-touch and keyboard code, sprite textures and the 3DS network stack only run on a console.
+Tested on an Old 2DS with CFW. Builds are on the [releases page](https://github.com/wyrmbound/showdown-3ds/releases).
+Bug reports: attach `sdmc:/3ds/showdown3ds/log.txt`.
